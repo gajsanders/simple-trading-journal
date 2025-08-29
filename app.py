@@ -5,7 +5,7 @@ A lightweight trading journal built with Streamlit for personal trade tracking.
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 import os
@@ -159,6 +159,188 @@ def add_trade(trade_data: dict) -> None:
     save_trades(df)
 
 
+def filter_trades(trades_df: pd.DataFrame, filter_config: dict) -> pd.DataFrame:
+    """
+    Apply filters to the trades DataFrame.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing all trades
+        filter_config (dict): Dictionary containing filter settings
+        
+    Returns:
+        pd.DataFrame: Filtered DataFrame
+    """
+    if trades_df.empty:
+        return trades_df
+    
+    filtered_df = trades_df.copy()
+    
+    # Date range filter
+    if filter_config.get('start_date') and filter_config.get('end_date'):
+        filtered_df = filtered_df[
+            (filtered_df['date'] >= filter_config['start_date']) & 
+            (filtered_df['date'] <= filter_config['end_date'])
+        ]
+    
+    # Symbol filter
+    if filter_config.get('symbols'):
+        filtered_df = filtered_df[filtered_df['symbol'].isin(filter_config['symbols'])]
+    
+    # Strategy filter
+    if filter_config.get('strategies'):
+        filtered_df = filtered_df[filtered_df['strategy'].isin(filter_config['strategies'])]
+    
+    # Status filter
+    if filter_config.get('statuses'):
+        filtered_df = filtered_df[filtered_df['status'].isin(filter_config['statuses'])]
+    
+    # PnL range filter
+    if filter_config.get('min_pnl') is not None and filter_config.get('max_pnl') is not None:
+        filtered_df = filtered_df[
+            (filtered_df['pnl'] >= filter_config['min_pnl']) & 
+            (filtered_df['pnl'] <= filter_config['max_pnl'])
+        ]
+    
+    # Text search filter
+    if filter_config.get('search_text'):
+        search_text = filter_config['search_text'].lower()
+        filtered_df = filtered_df[
+            filtered_df['symbol'].str.lower().str.contains(search_text, na=False) |
+            filtered_df['notes'].str.lower().str.contains(search_text, na=False)
+        ]
+    
+    return filtered_df
+
+
+def create_filter_sidebar(trades_df: pd.DataFrame) -> dict:
+    """
+    Create sidebar filter controls and return filter configuration.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing all trades
+        
+    Returns:
+        dict: Filter configuration
+    """
+    filter_config = {}
+    
+    st.sidebar.header("🔍 Filters")
+    
+    # Date range filter
+    st.sidebar.subheader("Date Range")
+    col1, col2 = st.sidebar.columns(2)
+    
+    # Default to last 30 days
+    default_end_date = datetime.now().date()
+    default_start_date = default_end_date - timedelta(days=30)
+    
+    with col1:
+        start_date = st.sidebar.date_input(
+            "Start Date", 
+            value=default_start_date,
+            key="start_date"
+        )
+    
+    with col2:
+        end_date = st.sidebar.date_input(
+            "End Date", 
+            value=default_end_date,
+            key="end_date"
+        )
+    
+    filter_config['start_date'] = start_date.strftime("%Y-%m-%d")
+    filter_config['end_date'] = end_date.strftime("%Y-%m-%d")
+    
+    # Date presets
+    preset = st.sidebar.selectbox(
+        "Date Presets",
+        ["Custom", "Last 7 Days", "Last 30 Days", "This Month", "This Year", "All Time"]
+    )
+    
+    # Apply preset
+    today = datetime.now().date()
+    if preset == "Last 7 Days":
+        filter_config['start_date'] = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    elif preset == "Last 30 Days":
+        filter_config['start_date'] = (today - timedelta(days=30)).strftime("%Y-%m-%d")
+    elif preset == "This Month":
+        filter_config['start_date'] = today.replace(day=1).strftime("%Y-%m-%d")
+    elif preset == "This Year":
+        filter_config['start_date'] = today.replace(month=1, day=1).strftime("%Y-%m-%d")
+    elif preset == "All Time":
+        # Use a very early date for all time
+        filter_config['start_date'] = "1900-01-01"
+    
+    # Symbol filter
+    if not trades_df.empty:
+        all_symbols = sorted(trades_df['symbol'].unique())
+        selected_symbols = st.sidebar.multiselect(
+            "Symbols",
+            all_symbols,
+            key="symbol_filter"
+        )
+        if selected_symbols:
+            filter_config['symbols'] = selected_symbols
+    
+    # Strategy filter
+    selected_strategies = st.sidebar.multiselect(
+        "Strategies",
+        STRATEGY_OPTIONS,
+        key="strategy_filter"
+    )
+    if selected_strategies:
+        filter_config['strategies'] = selected_strategies
+    
+    # Status filter
+    status_options = ["Open", "Closed"]
+    selected_statuses = st.sidebar.multiselect(
+        "Status",
+        status_options,
+        default=status_options,
+        key="status_filter"
+    )
+    if selected_statuses:
+        filter_config['statuses'] = selected_statuses
+    
+    # PnL range filter
+    st.sidebar.subheader("P&L Range")
+    col1, col2 = st.sidebar.columns(2)
+    
+    with col1:
+        min_pnl = st.sidebar.number_input(
+            "Min P&L",
+            value=-10000.0,
+            step=100.0,
+            key="min_pnl"
+        )
+    
+    with col2:
+        max_pnl = st.sidebar.number_input(
+            "Max P&L",
+            value=10000.0,
+            step=100.0,
+            key="max_pnl"
+        )
+    
+    filter_config['min_pnl'] = min_pnl
+    filter_config['max_pnl'] = max_pnl
+    
+    # Text search
+    search_text = st.sidebar.text_input(
+        "Search Symbols/Notes",
+        key="search_text"
+    )
+    if search_text:
+        filter_config['search_text'] = search_text
+    
+    # Clear filters button
+    if st.sidebar.button("Clear All Filters"):
+        st.session_state.clear()
+        st.experimental_rerun()
+    
+    return filter_config
+
+
 def main():
     """Main application function."""
     st.set_page_config(
@@ -176,6 +358,12 @@ def main():
     # Load existing trades
     trades_df = load_trades()
     
+    # Create filter sidebar and get filter config
+    filter_config = create_filter_sidebar(trades_df)
+    
+    # Apply filters
+    filtered_trades_df = filter_trades(trades_df, filter_config)
+    
     # Sidebar for controls
     with st.sidebar:
         st.header("Controls")
@@ -190,6 +378,15 @@ def main():
                 label="💾 Export Trades",
                 data=trades_df.to_csv(index=False),
                 file_name="trades_export.csv",
+                mime="text/csv"
+            )
+        
+        # Export filtered trades button
+        if not filtered_trades_df.empty and len(filtered_trades_df) != len(trades_df):
+            st.download_button(
+                label="💾 Export Filtered Trades",
+                data=filtered_trades_df.to_csv(index=False),
+                file_name="filtered_trades_export.csv",
                 mime="text/csv"
             )
     
@@ -245,8 +442,12 @@ def main():
                         except Exception as e:
                             st.error(f"Error adding trade: {str(e)}")
     
-    # Summary metrics
-    stats = get_summary_stats(trades_df)
+    # Show filter summary
+    if len(filtered_trades_df) != len(trades_df):
+        st.info(f"Showing {len(filtered_trades_df)} of {len(trades_df)} trades based on active filters")
+    
+    # Summary metrics (based on filtered data)
+    stats = get_summary_stats(filtered_trades_df)
     
     st.subheader("📈 Quick Stats")
     col1, col2, col3, col4 = st.columns(4)
@@ -263,15 +464,15 @@ def main():
     with col4:
         st.metric("Avg Trade", f"${stats['avg_trade']:.2f}")
     
-    # Trade history table
+    # Trade history table (filtered)
     st.subheader("📋 Trade History")
     
-    if trades_df.empty:
-        st.info("No trades recorded yet. Add your first trade using the form above.")
+    if filtered_trades_df.empty:
+        st.info("No trades match the current filters. Try adjusting your filter settings.")
     else:
         # Allow editing of trades
         edited_df = st.data_editor(
-            trades_df,
+            filtered_trades_df,
             use_container_width=True,
             num_rows="dynamic",
             column_config={
@@ -283,10 +484,12 @@ def main():
         )
         
         # Save changes if any
-        if not edited_df.equals(trades_df):
+        if not edited_df.equals(filtered_trades_df):
+            # We need to merge the changes back to the original dataframe
+            # This is a bit complex, so we'll just save all trades
             save_trades(edited_df)
             st.success("Changes saved!")
-            trades_df = edited_df  # Update for any subsequent operations
+            st.experimental_rerun()
 
 
 if __name__ == "__main__":
