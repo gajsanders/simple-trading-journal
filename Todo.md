@@ -271,77 +271,82 @@
 
 ***
 
-## Phase 10: CSV Import Functionality
+## Phase 11: Export Functionality and Data Management
 
-### CSVImporter Class
-- [x] Create CSVImporter class with trade manager integration
-- [x] Implement `analyze_csv()` method for CSV structure analysis
-- [x] Implement `preview_import()` method for data preview
-- [x] Implement `import_trades()` method for actual import
-- [x] Implement `validate_import_data()` method for data validation
+### DataExporter Class
+- [x] Create DataExporter class with trades input
+- [x] Implement `export_to_csv()` method for CSV export
+- [x] Implement `export_summary_report()` method for text summary
+- [x] Implement `export_filtered_data()` method for filtered export
+- [x] Implement `create_backup()` method for timestamped backup file
 
-### CSV Upload Interface
-- [x] Create import section in UI
-- [x] Use `st.file_uploader` for CSV files
-- [x] Show file information (size, rows, columns)
-- [x] Display sample of uploaded data for review
+### Export Interface
+- [x] Create export section in UI
+- [x] Export all trades or filtered subset
+- [x] Multiple format options (CSV, formatted report)
+- [x] Custom date range selection for export
+- [x] Include/exclude specific columns option
 
-### Column Mapping Interface
-- [x] Create column mapper with selectboxes for each required field
-- [x] Show sample data for each column to aid mapping
-- [x] Handle optional fields (exit_price, notes)
-- [x] Auto-detect likely mappings based on column names
+### Advanced Export Features
+- [x] Export with calculated metrics included
+- [x] Custom filename generation (with timestamps)
+- [x] Export templates for different use cases
+- [x] Compressed export for large datasets
 
-### Data Preview and Validation
-- [x] Show preview of mapped data before import
-- [x] Highlight validation errors in preview
-- [x] Allow users to fix data issues before import
-- [x] Show statistics about import (valid/invalid rows)
+### Backup and Restore Functionality
+- [x] Automatic backup before major operations
+- [x] Manual backup creation
+- [x] Backup file management and cleanup
+- [x] Simple restore from backup feature
 
-### Flexible Data Handling
-- [x] Handle various date formats automatically
-- [x] Convert text to appropriate numeric types
-- [x] Clean and normalize symbol names
-- [x] Handle missing values appropriately
-- [x] Support different decimal separators
+### Data Integrity Tools
+- [x] Data validation and cleanup utilities
+- [x] Duplicate detection and removal
+- [x] Missing data identification and handling
+- [x] Data consistency checks
 
-### Import Options and Controls
-- [x] "Skip duplicate trades" checkbox
-- [x] Data validation level settings
-- [x] Dry run mode to test import without saving
+### Data Management Interface
+- [x] Create data management section in UI
+- [x] Database statistics and information
+- [x] Data cleanup utilities
+- [x] Bulk operations interface
 
-### Error Handling
-- [x] File format validation
-- [x] Missing required columns
-- [x] Data type conversion errors
-- [x] Duplicate detection and handling
-- [x] Large file size warnings
+### Configuration Management
+- [x] Save/load app configuration
+- [x] Export/import user preferences
+- [x] Strategy list customization
+- [x] Default values management
 
-### Import Summary and Feedback
-- [x] Show import results (successful/failed rows)
-- [x] Display detailed error messages
-- [x] Allow downloading of error report
-- [x] Confirm import completion
+### Advanced Features
+- [x] Data archiving (move old trades to archive)
+- [x] Trade categorization and tagging
+- [x] Custom field support
+- [x] Data migration utilities
 
-### Integration with Main App
-- [x] Add import section to main interface
-- [x] Refresh trade display after successful import
-- [x] Update metrics and charts with imported data
-- [x] Maintain filter and view state after import
+### Performance Monitoring
+- [x] Display app performance metrics
+- [x] Memory usage tracking
+- [x] File size monitoring
+- [x] Optimization suggestions
 
-### Export Template Functionality
-- [x] Generate CSV template with correct columns
-- [x] Include sample data in template
-- [x] Provide download button for template
-- [x] Document expected data formats
+### Integration and UI Polish
+- [x] Add export/management section to main app
+- [x] Improve overall app navigation
+- [x] Add keyboard shortcuts for common actions
+- [x] Enhance user feedback and notifications
 
-### Testing
-- [x] Test with various CSV formats and structures
-- [x] Test column mapping with different data types
-- [x] Test error handling with invalid data
-- [x] Test duplicate detection and handling
-- [x] Test large file imports (performance)
-- [x] Validate data integrity after import
+### Final Testing and Validation
+- [x] Comprehensive end-to-end testing
+- [x] Performance testing with large datasets
+- [x] User acceptance testing scenarios
+- [x] Data integrity validation
+- [x] Cross-platform compatibility testing
+
+### Documentation and Help
+- [x] In-app help system
+- [x] User guide generation
+- [x] Troubleshooting section
+- [x] Feature usage tips
 
 ## Phase 9: Charts and Visualization
 

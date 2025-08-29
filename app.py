@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 import os
 import numpy as np
 import io
+import zipfile
 
 
 @dataclass
@@ -44,6 +45,7 @@ STRATEGY_OPTIONS = [
 # Ensure data directory exists
 DATA_DIR = "data"
 TRADES_FILE = os.path.join(DATA_DIR, "trades.csv")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 
 
 def load_trades() -> pd.DataFrame:
@@ -780,6 +782,176 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
         return {"success": False, "error": f"Error saving trades: {str(e)}"}
 
 
+def export_to_csv(trades_df: pd.DataFrame, include_metrics: bool = False) -> bytes:
+    """
+    Export trades to CSV format.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades to export
+        include_metrics (bool): Whether to include calculated metrics
+        
+    Returns:
+        bytes: CSV data as bytes
+    """
+    if include_metrics and not trades_df.empty:
+        # Add calculated metrics to the export
+        export_df = trades_df.copy()
+        
+        # Add some additional calculated fields
+        if 'entry_price' in export_df.columns and 'exit_price' in export_df.columns and 'quantity' in export_df.columns:
+            export_df['calculated_pnl'] = export_df.apply(
+                lambda row: calculate_pnl(row['entry_price'], row['exit_price'], row['quantity']),
+                axis=1
+            )
+        
+        # Add export timestamp
+        export_df['exported_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        csv_data = export_df.to_csv(index=False)
+    else:
+        csv_data = trades_df.to_csv(index=False)
+    
+    return csv_data.encode('utf-8')
+
+
+def export_summary_report(trades_df: pd.DataFrame) -> str:
+    """
+    Generate a text summary report of trades.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+        
+    Returns:
+        str: Summary report as text
+    """
+    if trades_df.empty:
+        return "No trades to report."
+    
+    stats = get_summary_stats(trades_df)
+    
+    # Get additional statistics
+    closed_trades = trades_df[trades_df['status'] == 'Closed']
+    open_trades = trades_df[trades_df['status'] == 'Open']
+    
+    # Calculate additional metrics
+    largest_win = 0.0
+    largest_loss = 0.0
+    if not closed_trades.empty:
+        largest_win = closed_trades['pnl'].max()
+        largest_loss = closed_trades['pnl'].min()
+    
+    # Generate report
+    report = f"""
+TRADE JOURNAL SUMMARY REPORT
+============================
+
+Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+OVERALL PERFORMANCE
+-------------------
+Total P&L: ${stats['total_pnl']:.2f}
+Win Rate: {stats['win_rate']:.1%}
+Total Trades: {stats['total_trades']}
+Average Trade: ${stats['avg_trade']:.2f}
+
+TRADE BREAKDOWN
+---------------
+Closed Trades: {len(closed_trades)}
+Open Trades: {len(open_trades)}
+Largest Win: ${largest_win:.2f}
+Largest Loss: ${largest_loss:.2f}
+
+STRATEGY PERFORMANCE
+--------------------
+"""
+    
+    # Add strategy breakdown
+    strategy_perf = get_strategy_performance(trades_df)
+    if not strategy_perf.empty:
+        for _, row in strategy_perf.iterrows():
+            report += f"{row['strategy']}: ${row['total_pnl']:.2f} (avg: ${row['avg_pnl']:.2f})\n"
+    
+    # Add top symbols
+    if not closed_trades.empty:
+        top_symbols = closed_trades.groupby('symbol')['pnl'].sum().sort_values(ascending=False).head(5)
+        report += "\nTOP PERFORMING SYMBOLS\n"
+        report += "----------------------\n"
+        for symbol, pnl in top_symbols.items():
+            report += f"{symbol}: ${pnl:.2f}\n"
+    
+    return report
+
+
+def create_backup() -> str:
+    """
+    Create a timestamped backup of the trades file.
+    
+    Returns:
+        str: Path to backup file
+    """
+    # Load current trades
+    trades_df = load_trades()
+    
+    # Create backup directory if it doesn't exist
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    
+    # Create timestamped filename
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_filename = f"trades_backup_{timestamp}.csv"
+    backup_path = os.path.join(BACKUP_DIR, backup_filename)
+    
+    # Save backup
+    trades_df.to_csv(backup_path, index=False)
+    
+    return backup_path
+
+
+def get_backup_files() -> List[str]:
+    """
+    Get list of available backup files.
+    
+    Returns:
+        List[str]: List of backup file paths
+    """
+    if not os.path.exists(BACKUP_DIR):
+        return []
+    
+    backup_files = []
+    for file in os.listdir(BACKUP_DIR):
+        if file.startswith("trades_backup_") and file.endswith(".csv"):
+            backup_files.append(os.path.join(BACKUP_DIR, file))
+    
+    # Sort by modification time (newest first)
+    backup_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    
+    return backup_files
+
+
+def restore_from_backup(backup_path: str) -> bool:
+    """
+    Restore trades from a backup file.
+    
+    Args:
+        backup_path (str): Path to backup file
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Check if backup file exists
+        if not os.path.exists(backup_path):
+            return False
+        
+        # Copy backup to main trades file
+        backup_df = pd.read_csv(backup_path)
+        save_trades(backup_df)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error restoring from backup: {str(e)}")
+        return False
+
+
 def display_import_section() -> None:
     """
     Display the CSV import section in the UI.
@@ -895,6 +1067,213 @@ def display_import_section() -> None:
         )
 
 
+def display_export_section(trades_df: pd.DataFrame, filtered_trades_df: pd.DataFrame) -> None:
+    """
+    Display the export section in the UI.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing all trades
+        filtered_trades_df (pd.DataFrame): DataFrame containing filtered trades
+    """
+    st.subheader("💾 Export Data")
+    
+    # Create tabs for different export options
+    tab1, tab2, tab3 = st.tabs(["CSV Export", "Summary Report", "Backup/Restore"])
+    
+    with tab1:
+        st.write("### CSV Export Options")
+        
+        # Export options
+        export_type = st.radio(
+            "Export Type",
+            ["All Trades", "Filtered Trades"],
+            key="export_type"
+        )
+        
+        include_metrics = st.checkbox("Include calculated metrics", value=False)
+        
+        # Select data to export
+        data_to_export = trades_df if export_type == "All Trades" else filtered_trades_df
+        
+        if not data_to_export.empty:
+            # Generate export data
+            csv_data = export_to_csv(data_to_export, include_metrics)
+            
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"trades_export_{timestamp}.csv"
+            
+            # Download button
+            st.download_button(
+                label="Download CSV",
+                data=csv_data,
+                file_name=filename,
+                mime="text/csv"
+            )
+        else:
+            st.info("No trades to export.")
+    
+    with tab2:
+        st.write("### Summary Report")
+        
+        # Generate summary report
+        report = export_summary_report(trades_df)
+        
+        # Display report
+        st.text_area("Report Preview", report, height=400)
+        
+        # Download button for report
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        report_filename = f"trade_summary_{timestamp}.txt"
+        
+        st.download_button(
+            label="Download Summary Report",
+            data=report,
+            file_name=report_filename,
+            mime="text/plain"
+        )
+    
+    with tab3:
+        st.write("### Backup and Restore")
+        
+        # Create backup button
+        if st.button("Create Backup"):
+            try:
+                backup_path = create_backup()
+                st.success(f"Backup created successfully: {os.path.basename(backup_path)}")
+            except Exception as e:
+                st.error(f"Error creating backup: {str(e)}")
+        
+        # Show available backups
+        backup_files = get_backup_files()
+        if backup_files:
+            st.write("**Available Backups:**")
+            
+            # Show backups in a table
+            backup_data = []
+            for backup_file in backup_files:
+                filename = os.path.basename(backup_file)
+                mod_time = datetime.fromtimestamp(os.path.getmtime(backup_file))
+                size = os.path.getsize(backup_file)
+                backup_data.append({
+                    "Filename": filename,
+                    "Date": mod_time.strftime('%Y-%m-%d %H:%M:%S'),
+                    "Size (KB)": round(size / 1024, 2)
+                })
+            
+            backup_df = pd.DataFrame(backup_data)
+            st.dataframe(backup_df)
+            
+            # Restore option
+            st.write("**Restore from Backup:**")
+            selected_backup = st.selectbox(
+                "Select backup to restore",
+                [os.path.basename(f) for f in backup_files],
+                key="backup_select"
+            )
+            
+            if st.button("Restore Selected Backup"):
+                selected_path = os.path.join(BACKUP_DIR, selected_backup)
+                if restore_from_backup(selected_path):
+                    st.success("Backup restored successfully!")
+                    st.experimental_rerun()
+                else:
+                    st.error("Failed to restore backup.")
+        else:
+            st.info("No backups available.")
+
+
+def display_data_management_section(trades_df: pd.DataFrame) -> None:
+    """
+    Display the data management section in the UI.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing all trades
+    """
+    st.subheader("⚙️ Data Management")
+    
+    if trades_df.empty:
+        st.info("No trades to manage.")
+        return
+    
+    # Show data statistics
+    st.write("### Data Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Trades", len(trades_df))
+    
+    with col2:
+        closed_trades = trades_df[trades_df['status'] == 'Closed']
+        st.metric("Closed Trades", len(closed_trades))
+    
+    with col3:
+        open_trades = trades_df[trades_df['status'] == 'Open']
+        st.metric("Open Trades", len(open_trades))
+    
+    with col4:
+        unique_symbols = trades_df['symbol'].nunique()
+        st.metric("Unique Symbols", unique_symbols)
+    
+    # Show file information
+    st.write("### File Information")
+    if os.path.exists(TRADES_FILE):
+        file_size = os.path.getsize(TRADES_FILE)
+        mod_time = datetime.fromtimestamp(os.path.getmtime(TRADES_FILE))
+        
+        st.write(f"**Main Data File:** {TRADES_FILE}")
+        st.write(f"**File Size:** {file_size} bytes ({round(file_size/1024, 2)} KB)")
+        st.write(f"**Last Modified:** {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Data cleanup options
+    st.write("### Data Cleanup")
+    
+    # Find duplicates
+    if not trades_df.empty:
+        trades_df['duplicate_key'] = trades_df.apply(
+            lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
+        )
+        duplicates = trades_df[trades_df.duplicated('duplicate_key', keep=False)]
+        
+        if not duplicates.empty:
+            st.warning(f"Found {len(duplicates)} potential duplicate trades.")
+            if st.button("Remove Duplicates"):
+                # Remove duplicates, keeping the first occurrence
+                cleaned_df = trades_df.drop_duplicates('duplicate_key', keep='first')
+                cleaned_df = cleaned_df.drop('duplicate_key', axis=1)
+                save_trades(cleaned_df)
+                st.success("Duplicates removed successfully!")
+                st.experimental_rerun()
+        else:
+            st.success("No duplicates found.")
+        
+        # Clean up temporary column
+        if 'duplicate_key' in trades_df.columns:
+            trades_df = trades_df.drop('duplicate_key', axis=1)
+    
+    # Reset data button (with confirmation)
+    st.write("### Reset Data")
+    st.warning("⚠️ This will permanently delete all trades!")
+    if st.checkbox("I understand this action cannot be undone", key="reset_confirm"):
+        if st.button("Reset All Data"):
+            try:
+                # Create backup before reset
+                backup_path = create_backup()
+                st.info(f"Backup created: {os.path.basename(backup_path)}")
+                
+                # Clear the main data file
+                empty_df = pd.DataFrame(columns=[
+                    "date", "symbol", "strategy", "entry_price", 
+                    "exit_price", "quantity", "pnl", "notes", "status"
+                ])
+                save_trades(empty_df)
+                
+                st.success("All data has been reset!")
+                st.experimental_rerun()
+            except Exception as e:
+                st.error(f"Error resetting data: {str(e)}")
+
+
 def main():
     """Main application function."""
     st.set_page_config(
@@ -910,6 +1289,10 @@ def main():
         st.session_state.show_form = False
     if 'show_import' not in st.session_state:
         st.session_state.show_import = False
+    if 'show_export' not in st.session_state:
+        st.session_state.show_export = False
+    if 'show_management' not in st.session_state:
+        st.session_state.show_management = False
     
     # Load existing trades
     trades_df = load_trades()
@@ -932,23 +1315,13 @@ def main():
         if st.button("📁 Import CSV"):
             st.session_state.show_import = not st.session_state.show_import
         
-        # Export button
-        if not trades_df.empty:
-            st.download_button(
-                label="💾 Export Trades",
-                data=trades_df.to_csv(index=False),
-                file_name="trades_export.csv",
-                mime="text/csv"
-            )
+        # Toggle export visibility
+        if st.button("💾 Export Data"):
+            st.session_state.show_export = not st.session_state.show_export
         
-        # Export filtered trades button
-        if not filtered_trades_df.empty and len(filtered_trades_df) != len(trades_df):
-            st.download_button(
-                label="💾 Export Filtered Trades",
-                data=filtered_trades_df.to_csv(index=False),
-                file_name="filtered_trades_export.csv",
-                mime="text/csv"
-            )
+        # Toggle data management visibility
+        if st.button("⚙️ Data Management"):
+            st.session_state.show_management = not st.session_state.show_management
     
     # Add trade form (collapsible)
     if st.session_state.show_form:
@@ -1006,6 +1379,16 @@ def main():
     if st.session_state.show_import:
         with st.expander("📁 CSV Import", expanded=True):
             display_import_section()
+    
+    # Export section (collapsible)
+    if st.session_state.show_export:
+        with st.expander("💾 Export Data", expanded=True):
+            display_export_section(trades_df, filtered_trades_df)
+    
+    # Data management section (collapsible)
+    if st.session_state.show_management:
+        with st.expander("⚙️ Data Management", expanded=True):
+            display_data_management_section(trades_df)
     
     # Show filter summary
     if len(filtered_trades_df) != len(trades_df):
