@@ -1,0 +1,65 @@
+Symbol,Status,MarketOrFill,Price,TIF,Time,TimeStampAtType,Order #,Description
+ETHA,Filled,1.06 cr,1.06 cr,Day,8:46:07p,Fill,#395388728,-2 Aug 15 30d 23 Put STO
+ETHA,Filled,0.15 db,0.15 db,GTC,7/15 4:20p,Fill,#394950073,2 Aug 15 30d 16 Put BTC
+ETHA,Filled,1.74 cr,1.74 cr,Day,7/14 6:11p,Fill,#394744882,-2 Sep 19 65d 21 Put STO
+IBIT,Filled,2.42 cr,2.42 cr,Day,7/14 6:05p,Fill,#394745206,-1 Aug 29 44d 65 Put STO
+XOP,Filled,2.11 cr,2.11 cr,Day,7/11 5:15p,Fill,#394441967,-1 Aug 15 30d 128 Put STO
+GOOGL,Filled,0.73 db,0.73 db,GTC,7/11 4:45p,Fill,#392514930,1 Aug 15 30d 150 Put BTC
+ETHA,Filled,1.07 cr,1.07 cr,Day,7/11 4:31p,Fill,#394412985,-2 Aug 15 30d 21 Put STO
+ETHA,Filled,1.85 cr,1.85 cr,Day,7/10 4:01p,Fill,#394099410,-2 Sep 19 65d 20 Put STO
+IBIT,Filled,2.19 cr,2.19 cr,Day,7/10 3:54p,Fill,#394094920,-1 Aug 22 37d 60.5 Put STO
+ETHA,Filled,0.05 db,0.05 db,GTC,7/10 3:30p,Fill,#389828663,2 Jul 18 2d 17 Put BTC
+IBIT,Filled,0.88 db,0.88 db,GTC,7/09 9:54p,Fill,#391438080,1 Aug 15 30d 57 Put BTC
+IBIT,Filled,1.99 cr,1.99 cr,Day,7/09 3:51p,Fill,#393838326,-1 Aug 22 37d 59.5 Put STO
+IBIT,Filled,0.22 db,0.22 db,GTC,7/09 3:30p,Fill,#392514418,1 Jul 18 2d 58 Put BTC
+PLTR,Filled,2.74 cr,2.74 cr,Day,7/08 5:24p,Fill,#393666003,-1 Aug 15 30d 110 Put STO
+AMZN,Filled,1.60 cr,1.60 cr,Day,7/08 5:23p,Fill,#393666434,-1 Aug 15 30d 190 Put STO
+CRCL,Filled,3.20 db,3.20 db,GTC,7/07 3:30p,Fill,#391437330,1 Aug 15 30d 125 Put BTC
+TEM,Filled,1.60 cr,1.60 cr,Day,7/02 9:52p,Fill,#393012577,-1 Aug 15 30d 45 Put STO
+IBIT,Filled,1.10 cr,1.10 cr,Day,7/01 9:09p,Fill,#392762525,-1 Aug 15 30d 54 Put STO
+ETHA,Filled,0.66 cr,0.66 cr,Day,7/01 9:03p,Fill,#392760299,-2 Aug 15 30d 16 Put STO
+/MESU5,Filled,32.75 cr,32.75 cr,Day,6/30 9:54p,Fill,#392515437,-1 Aug 1 16d 5975 Put STO
+/MESU5,Filled,10.00 db,10.00 db,GTC,6/30 9:50p,Fill,#387760817,1 Aug 15 30d 5325 Put BTC
+GOOGL,Filled,1.53 cr,1.53 cr,Day,6/26 9:39p,Fill,#391933384,-1 Aug 15 30d 150 Put STO
+IBIT,Filled,0.90 cr,0.90 cr,Day,6/26 9:33p,Fill,#391930345,-1 Jul 18 2d 58 Put STO
+UBER,Filled,0.64 db,0.64 db,GTC,6/26 4:59p,Fill,#388884627,1 Aug 15 30d 75 Put BTC
+SPY,Filled,5.75 db,5.80 db,GTC,6/26 3:30p,Fill,#362361179,1 Jan 16 184d 490 Put BTC
+IBIT,Filled,0.77 db,0.93 db,GTC,6/25 3:30p,Fill,#386204876,1 Jul 18 2d 57 Put BTC
+CRCL,Filled,6.95 cr,6.95 cr,Day,6/24 9:47p,Fill,#391433168,-1 Aug 15 30d 125 Put STO
+ARM,Filled,1.47 db,1.47 db,GTC,6/24 8:17p,Fill,#391312326,1 Aug 15 30d 115 Put BTC
+ETHA,Filled,0.56 cr,0.56 cr,Day,6/16 3:47p,Fill,#389825911,-2 Jul 18 2d 17 Put STO
+UBER,Filled,1.72 cr,1.72 cr,Day,6/10 9:37p,Fill,#388884320,-1 Aug 15 30d 75 Put STO
+ARM,Filled,3.60 cr,3.60 cr,Day,6/10 9:30p,Fill,#388880677,-1 Aug 15 30d 115 Put STO
+ARM,Filled,0.88 db,0.88 db,Day,6/10 8:24p,Fill,#388845577,1 Jul 18 2d 110 Put BTC
+IBIT,Filled,2.47 cr,2.47 cr,Day,6/09 9:24p,Fill,#388614021,-1 Aug 15 30d 57 Put STO
+QQQ,Filled,2.45 db,2.45 db,GTC,6/06 4:28p,Fill,#388188836,1 Jul 18 2d 476 Put BTC
+/MESU5,Filled,7.70 db,7.70 db,Day,6/04 9:02p,Fill,#387760914,1 Sep 19 64d 3800 Put BTO
+ARM,Filled,2.13 cr,2.13 cr,Day,6/04 8:57p,Fill,#387759187,-1 Jul 18 2d 110 Put STO
+/MESU5,Filled,35.25 cr,35.25 cr,Day,6/04 8:56p,Fill,#387759829,-1 Aug 15 30d 5325 Put STO
+PLTR,Filled,0.73 db,0.73 db,GTC,6/03 3:30p,Fill,#385114192,1 Jul 18 2d 90 Put BTC
+/MESU5,Filled,6.15 cr,6.15 cr,Day,5/28 3:57p,Fill,#386256988,"-1 Jul 31 15d 5400 Put STO
+1 Jul 31 15d 5325 Put BTO"
+IBIT,Filled,2.03 cr,2.03 cr,Day,5/27 9:46p,Fill,#386199838,-1 Jul 18 2d 57 Put STO
+PLTR,Filled,1.40 cr,1.40 cr,GTC,5/20 9:12p,Fill,#385112242,-1 Jul 18 2d 90 Put STO
+QQQ,Filled,4.90 cr,4.90 cr,Day,5/19 9:50p,Fill,#384899168,-1 Jul 18 2d 476 Put STO
+AMD,Filled,0.33 cr,0.33 cr,Day,4/21 7:07p,Fill,#379619253,-2 May 16 Exp 115 Call STO
+AMD,Filled,0.05 db,0.05 db,GTC,4/21 5:09p,Fill,#378405221,2 May 2 Exp 118 Call BTC
+AMD,Filled,0.44 cr,0.44 cr,Day,4/09 8:37p,Fill,#377811796,-2 May 2 Exp 118 Call STO
+AMD,Filled,0.04 db,0.04 db,GTC,4/08 3:31p,Fill,#376379366,2 Apr 17 Exp 119 Call BTC
+AMD,Filled,0.35 cr,0.35 cr,GTD 3/28,3/28 5:51p,Fill,#375112053,-2 Apr 17 Exp 119 Call STO
+AMD,Filled,0.01 db,0.01 db,Day,3/27 8:28p,Fill,#374926635,2 Mar 28 Exp 119 Call BTC
+AMD,Filled,0.29 cr,0.29 cr,Day,3/07 4:07p,Fill,#371021297,-2 Mar 28 Exp 119 Call STO
+AMD,Filled,0.05 db,0.05 db,GTC,3/07 3:30p,Fill,#369411237,2 Mar 14 Exp 119 Call BTC
+AMD,Filled,0.27 cr,0.27 cr,Day,2/27 4:13p,Fill,#369233392,-2 Mar 14 Exp 119 Call STO
+AMD,Filled,0.08 db,0.08 db,GTC,2/27 4:00p,Fill,#368516685,2 Mar 7 Exp 121 Call BTC
+AMD,Filled,0.46 cr,0.46 cr,Day,2/24 3:48p,Fill,#368356840,-2 Mar 7 Exp 121 Call STO
+QQQ,Filled,7.05 db,7.05 db,GTC,2/24 3:45p,Fill,#368352622,1 Jan 16 184d 394.78 Put BTC
+BIL,Filled,91.61 cr,91.60 cr,GTC,2/19 3:30p,Fill,#365288129,-115 STC
+WYNN,Filled,0.67 db,0.67 db,GTC,2/14 3:37p,Fill,#354657605,1 Feb 21 Exp 82.5 Put BTC
+UBER,Filled,0.98 db,0.98 db,GTC,2/04 4:10p,Fill,#364723390,1 Feb 21 Exp 62.5 Put BTC
+GOOGL,Filled,0.90 db,0.90 db,GTC,1/31 3:30p,Fill,#363798132,1 Feb 14 Exp 180 Put BTC
+QQQ,Filled,8.36 cr,8.36 cr,Day,1/27 8:40p,Fill,#363151352,-1 Jan 16 184d 394.78 Put STO
+SPY,Filled,8.36 cr,8.36 cr,Day,1/22 8:29p,Fill,#362338473,-1 Jan 16 184d 490 Put STO
+COIN,Filled,2.37 db,2.37 db,GTC,1/21 6:42p,Fill,#361565908,1 Feb 14 Exp 230 Put BTC
+GOOGL,Filled,1.88 cr,1.88 cr,Day,1/17 8:10p,Fill,#361761751,-1 Feb 14 Exp 180 Put STO
+COIN,Filled,4.70 cr,4.70 cr,Day,1/16 9:56p,Fill,#361535344,-1 Feb 14 Exp 230 Put STO
