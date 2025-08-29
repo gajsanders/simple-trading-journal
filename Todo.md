@@ -269,51 +269,45 @@
 
 ***
 
-## Phase 8: Filtering and Search Functionality
+***
 
-### TradeFilter Class
-- [x] Create TradeFilter class with trade list input
-- [x] Implement `filter_by_date_range()` method
-- [x] Implement `filter_by_symbol()` method
-- [x] Implement `filter_by_strategy()` method
-- [x] Implement `filter_by_status()` method
-- [x] Implement `filter_by_pnl_range()` method
-- [x] Implement `apply_all_filters()` method
+## Phase 9: Charts and Visualization
 
-### Filter UI Components
-- [x] Create `create_filter_sidebar()` function
-- [x] Use `st.sidebar` for all filter controls
-- [x] Add date range selector with defaults
-- [x] Add multi-select for symbols (from existing trades)
-- [x] Add multi-select for strategies
-- [x] Add checkbox options for Open/Closed status
-- [x] Add number inputs for P&L range filtering
+### TradeCharts Class
+- [x] Create TradeCharts class with trade list input
+- [x] Implement `get_pnl_over_time()` method
+- [x] Implement `get_win_loss_distribution()` method
+- [x] Implement `get_strategy_performance()` method
+- [x] Implement `get_monthly_summary()` method
 
-### Search Functionality
-- [x] Implement text search in symbols and notes
-- [x] Add search highlighting in results
-- [x] Make search case-insensitive
-- [x] Provide real-time search results
+### P&L Over Time Chart
+- [x] Create `create_pnl_chart()` function
+- [x] Use `st.line_chart` for cumulative P&L
+- [x] Show individual trade P&L and running total
+- [x] Handle both open and closed trades
+- [x] Add proper date formatting and scaling
 
-### Filter Management
-- [x] Store filter state in session state
-- [x] Add "Clear All Filters" button
-- [x] Show active filter count and summary
-- [x] Remember filter settings across sessions
+### Performance Distribution Charts
+- [x] Create win/loss histogram using `st.bar_chart`
+- [x] Show frequency of wins vs losses
+- [x] Display P&L distribution by trade size
+- [x] Create strategy performance comparison
 
-### Filter Presets
-- [x] Add "This Month", "Last 30 Days", "This Year" presets
-- [x] Add "Winning Trades Only", "Losing Trades Only" presets
-- [x] Add "Open Positions", "Closed Positions" presets
-- [x] Implement save/load custom filter presets
+### Summary Visualizations
+- [x] Add monthly performance bar chart
+- [x] Show symbol performance (top winners/losers)
+- [x] Display trade frequency over time
+- [x] Create portfolio value progression chart
 
-### Testing Phase 8
-- [x] Test each filter type independently
-- [x] Test combination of multiple filters
-- [x] Test filter persistence across sessions
-- [x] Test performance with various dataset sizes
-- [x] Test edge cases (filters returning no results)
-- [x] Verify filter accuracy with known datasets
+### Chart Management
+- [x] Create `display_charts()` function
+- [x] Organize charts in tabs or expandable sections
+- [x] Handle empty datasets gracefully
+- [x] Show appropriate messages for insufficient data
+
+### Chart Features
+- [x] Update charts based on applied filters
+- [x] Add chart export options where possible
 
 ## Phase 9: Charts and Visualization
 

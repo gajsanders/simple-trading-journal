@@ -27,7 +27,7 @@
 - [x] Completed
 
 ### Prompt 9: Charts and Visualization
-- [ ] Not completed
+- [x] Completed
 
 ### Prompt 10: CSV Import Functionality
 - [ ] Not completed
@@ -39,6 +39,6 @@
 - [ ] Not completed
 
 ## Summary
-- 8/12 prompts fully completed
+- 9/12 prompts fully completed
 - 1/12 prompts partially completed
-- 3/12 prompts not started
+- 2/12 prompts not started

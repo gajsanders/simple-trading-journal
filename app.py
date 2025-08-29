@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 import os
+import numpy as np
 
 
 @dataclass
@@ -341,6 +342,198 @@ def create_filter_sidebar(trades_df: pd.DataFrame) -> dict:
     return filter_config
 
 
+def get_pnl_over_time(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare data for P&L over time chart.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+        
+    Returns:
+        pd.DataFrame: DataFrame with cumulative P&L data
+    """
+    if trades_df.empty:
+        return pd.DataFrame(columns=['date', 'cumulative_pnl', 'daily_pnl'])
+    
+    # Filter to only closed trades for P&L calculations
+    closed_trades = trades_df[trades_df['status'] == 'Closed'].copy()
+    
+    if closed_trades.empty:
+        return pd.DataFrame(columns=['date', 'cumulative_pnl', 'daily_pnl'])
+    
+    # Convert date column to datetime
+    closed_trades['date'] = pd.to_datetime(closed_trades['date'])
+    
+    # Sort by date
+    closed_trades = closed_trades.sort_values('date')
+    
+    # Calculate cumulative P&L
+    closed_trades['cumulative_pnl'] = closed_trades['pnl'].cumsum()
+    
+    # Group by date to get daily P&L
+    daily_pnl = closed_trades.groupby('date')['pnl'].sum().reset_index()
+    daily_pnl = daily_pnl.sort_values('date')
+    daily_pnl['cumulative_pnl'] = daily_pnl['pnl'].cumsum()
+    
+    return daily_pnl
+
+
+def get_win_loss_distribution(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare data for win/loss distribution chart.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+        
+    Returns:
+        pd.DataFrame: DataFrame with win/loss data
+    """
+    if trades_df.empty:
+        return pd.DataFrame(columns=['category', 'count'])
+    
+    # Filter to only closed trades
+    closed_trades = trades_df[trades_df['status'] == 'Closed']
+    
+    if closed_trades.empty:
+        return pd.DataFrame(columns=['category', 'count'])
+    
+    # Count wins and losses
+    wins = len(closed_trades[closed_trades['pnl'] > 0])
+    losses = len(closed_trades[closed_trades['pnl'] < 0])
+    breakeven = len(closed_trades[closed_trades['pnl'] == 0])
+    
+    return pd.DataFrame({
+        'category': ['Wins', 'Losses', 'Breakeven'],
+        'count': [wins, losses, breakeven]
+    })
+
+
+def get_strategy_performance(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare data for strategy performance chart.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+        
+    Returns:
+        pd.DataFrame: DataFrame with strategy performance data
+    """
+    if trades_df.empty:
+        return pd.DataFrame(columns=['strategy', 'total_pnl', 'avg_pnl'])
+    
+    # Filter to only closed trades
+    closed_trades = trades_df[trades_df['status'] == 'Closed']
+    
+    if closed_trades.empty:
+        return pd.DataFrame(columns=['strategy', 'total_pnl', 'avg_pnl'])
+    
+    # Group by strategy and calculate performance
+    strategy_perf = closed_trades.groupby('strategy').agg({
+        'pnl': ['sum', 'mean', 'count']
+    }).reset_index()
+    
+    # Flatten column names
+    strategy_perf.columns = ['strategy', 'total_pnl', 'avg_pnl', 'trade_count']
+    
+    return strategy_perf[['strategy', 'total_pnl', 'avg_pnl']]
+
+
+def get_monthly_summary(trades_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare data for monthly performance chart.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+        
+    Returns:
+        pd.DataFrame: DataFrame with monthly performance data
+    """
+    if trades_df.empty:
+        return pd.DataFrame(columns=['month', 'pnl'])
+    
+    # Filter to only closed trades
+    closed_trades = trades_df[trades_df['status'] == 'Closed'].copy()
+    
+    if closed_trades.empty:
+        return pd.DataFrame(columns=['month', 'pnl'])
+    
+    # Convert date column to datetime
+    closed_trades['date'] = pd.to_datetime(closed_trades['date'])
+    
+    # Extract month-year
+    closed_trades['month'] = closed_trades['date'].dt.to_period('M').astype(str)
+    
+    # Group by month and sum P&L
+    monthly_perf = closed_trades.groupby('month')['pnl'].sum().reset_index()
+    
+    return monthly_perf
+
+
+def display_charts(trades_df: pd.DataFrame) -> None:
+    """
+    Display charts for trade analysis.
+    
+    Args:
+        trades_df (pd.DataFrame): DataFrame containing trades
+    """
+    if trades_df.empty:
+        st.info("No data available for charts. Add some trades to see visualizations.")
+        return
+    
+    # Filter to only closed trades for most charts
+    closed_trades = trades_df[trades_df['status'] == 'Closed']
+    
+    if closed_trades.empty:
+        st.info("No closed trades available for charts. Close some trades to see visualizations.")
+        return
+    
+    st.subheader("📊 Performance Charts")
+    
+    # Create tabs for different charts
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "P&L Over Time", 
+        "Win/Loss Distribution", 
+        "Strategy Performance", 
+        "Monthly Performance"
+    ])
+    
+    with tab1:
+        st.write("### Cumulative P&L Over Time")
+        pnl_data = get_pnl_over_time(trades_df)
+        if not pnl_data.empty:
+            st.line_chart(pnl_data.set_index('date')['cumulative_pnl'], height=400)
+            
+            # Show daily P&L as bar chart
+            st.write("### Daily P&L")
+            st.bar_chart(pnl_data.set_index('date')['pnl'], height=300)
+        else:
+            st.info("No closed trades available for P&L chart.")
+    
+    with tab2:
+        st.write("### Win/Loss Distribution")
+        win_loss_data = get_win_loss_distribution(trades_df)
+        if not win_loss_data.empty:
+            st.bar_chart(win_loss_data.set_index('category')['count'], height=400)
+        else:
+            st.info("No closed trades available for win/loss distribution.")
+    
+    with tab3:
+        st.write("### Strategy Performance")
+        strategy_data = get_strategy_performance(trades_df)
+        if not strategy_data.empty:
+            st.bar_chart(strategy_data.set_index('strategy')['total_pnl'], height=400)
+        else:
+            st.info("No closed trades available for strategy performance chart.")
+    
+    with tab4:
+        st.write("### Monthly Performance")
+        monthly_data = get_monthly_summary(trades_df)
+        if not monthly_data.empty:
+            st.bar_chart(monthly_data.set_index('month')['pnl'], height=400)
+        else:
+            st.info("No closed trades available for monthly performance chart.")
+
+
 def main():
     """Main application function."""
     st.set_page_config(
@@ -445,6 +638,9 @@ def main():
     # Show filter summary
     if len(filtered_trades_df) != len(trades_df):
         st.info(f"Showing {len(filtered_trades_df)} of {len(trades_df)} trades based on active filters")
+    
+    # Display charts
+    display_charts(filtered_trades_df)
     
     # Summary metrics (based on filtered data)
     stats = get_summary_stats(filtered_trades_df)
