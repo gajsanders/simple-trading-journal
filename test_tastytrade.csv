@@ -1,0 +1,4 @@
+Symbol,Status,MarketOrFill,Price,TIF,Time,TimeStampAtType,Order #,Description
+ETHA,Filled,1.06 cr,1.06 cr,Day,8:46:07p,Fill,#395388728,-2 Aug 15 30d 23 Put STO
+GOOGL,Filled,0.73 db,0.73 db,GTC,7/11 4:45p,Fill,#392514930,1 Aug 15 30d 150 Put BTC
+SPY,Filled,5.75 db,5.80 db,GTC,6/26 3:30p,Fill,#362361179,1 Jan 16 184d 490 Put BTC

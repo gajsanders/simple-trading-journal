@@ -661,7 +661,7 @@ def analyze_csv(uploaded_file) -> dict:
     """
     # Read the CSV file
     try:
-        df = pd.read_csv(uploaded_file, nrows=5)
+        df = pd.read_csv(uploaded_file, nrows=10)
         uploaded_file.seek(0)  # Reset file pointer
     except Exception as e:
         st.error(f"Error reading CSV file: {str(e)}")
@@ -669,6 +669,14 @@ def analyze_csv(uploaded_file) -> dict:
     
     # Get column names
     csv_columns = df.columns.tolist()
+    
+    # Check if this looks like a Tastytrade format
+    tastytrade_indicators = [
+        "Symbol", "Status", "MarketOrFill", "Price", "TIF", 
+        "Time", "TimeStampAtType", "Order #", "Description"
+    ]
+    
+    is_tastytrade = all(col in csv_columns for col in ["Symbol", "Price", "Description"])
     
     # Required trade fields
     required_fields = [
@@ -679,31 +687,43 @@ def analyze_csv(uploaded_file) -> dict:
     # Suggested mappings based on common column names
     suggested_mappings = {}
     
-    # Common variations for each field
-    field_variations = {
-        "date": ["date", "trade_date", "entry_date", "timestamp"],
-        "symbol": ["symbol", "ticker", "stock", "instrument"],
-        "strategy": ["strategy", "strat", "approach"],
-        "entry_price": ["entry_price", "entry", "buy_price", "purchase_price"],
-        "exit_price": ["exit_price", "sell_price", "sale_price", "close_price"],
-        "quantity": ["quantity", "qty", "shares", "contracts", "size"],
-        "pnl": ["pnl", "profit", "loss", "gain"],
-        "notes": ["notes", "comment", "description", "remarks"],
-        "status": ["status", "state"]
-    }
-    
-    # Try to auto-map columns
-    for field in required_fields:
-        for col in csv_columns:
-            if col.lower() in field_variations[field]:
-                suggested_mappings[field] = col
-                break
+    if is_tastytrade:
+        # Special handling for Tastytrade format
+        suggested_mappings = {
+            "symbol": "Symbol",
+            "entry_price": "Price",  # Will need parsing
+            "notes": "Description",
+            "status": "Status"
+        }
+        # For Tastytrade, we'll need to parse additional fields from Description
+    else:
+        # Standard column mapping logic
+        # Common variations for each field
+        field_variations = {
+            "date": ["date", "trade_date", "entry_date", "timestamp"],
+            "symbol": ["symbol", "ticker", "stock", "instrument"],
+            "strategy": ["strategy", "strat", "approach"],
+            "entry_price": ["entry_price", "entry", "buy_price", "purchase_price"],
+            "exit_price": ["exit_price", "sell_price", "sale_price", "close_price"],
+            "quantity": ["quantity", "qty", "shares", "contracts", "size"],
+            "pnl": ["pnl", "profit", "loss", "gain"],
+            "notes": ["notes", "comment", "description", "remarks"],
+            "status": ["status", "state"]
+        }
+        
+        # Try to auto-map columns
+        for field in required_fields:
+            for col in csv_columns:
+                if col.lower() in field_variations[field]:
+                    suggested_mappings[field] = col
+                    break
     
     return {
         "columns": csv_columns,
         "sample_data": df.head(),
         "suggested_mappings": suggested_mappings,
-        "row_count": len(df)
+        "row_count": len(df),
+        "is_tastytrade": is_tastytrade
     }
 
 
@@ -788,7 +808,14 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
     except Exception as e:
         return {"success": False, "error": f"Error reading CSV file: {str(e)}"}
     
-    # Apply column mapping
+    # Check if this is a Tastytrade format
+    is_tastytrade = "Symbol" in df.columns and "Price" in df.columns and "Description" in df.columns
+    
+    if is_tastytrade:
+        # Handle Tastytrade-specific format
+        return import_tastytrade_trades(df, skip_duplicates)
+    
+    # Apply column mapping for standard format
     mapped_df = pd.DataFrame()
     for trade_field, csv_column in column_mapping.items():
         if csv_column in df.columns:
@@ -892,6 +919,212 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
         }
     except Exception as e:
         return {"success": False, "error": f"Error saving trades: {str(e)}"}
+
+
+def import_tastytrade_trades(df: pd.DataFrame, skip_duplicates: bool = False) -> dict:
+    """
+    Import trades from Tastytrade CSV format.
+    
+    Args:
+        df (pd.DataFrame): DataFrame with Tastytrade data
+        skip_duplicates (bool): Whether to skip duplicate trades
+        
+    Returns:
+        dict: Import results including success/failure counts
+    """
+    try:
+        # Process Tastytrade data
+        processed_trades = []
+        
+        for idx, row in df.iterrows():
+            try:
+                # Parse the trade data from Tastytrade format
+                trade_data = parse_tastytrade_row(row)
+                if trade_data:
+                    processed_trades.append(trade_data)
+            except Exception as e:
+                st.warning(f"Skipping row {idx+1} due to parsing error: {str(e)}")
+                continue
+        
+        if not processed_trades:
+            return {"success": False, "error": "No valid trades found in the file"}
+        
+        # Convert to DataFrame
+        mapped_df = pd.DataFrame(processed_trades)
+        
+        # Validate data
+        validation_errors = validate_import_data(mapped_df)
+        if validation_errors:
+            return {
+                "success": False, 
+                "error": "Validation errors found",
+                "validation_errors": validation_errors
+            }
+        
+        # Load existing trades
+        existing_trades = load_trades()
+        
+        # Check for duplicates if requested
+        if skip_duplicates and not existing_trades.empty:
+            # Create a key for identifying duplicates (date, symbol, entry_price)
+            mapped_df['duplicate_key'] = mapped_df.apply(
+                lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
+            )
+            existing_trades['duplicate_key'] = existing_trades.apply(
+                lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
+            )
+            
+            # Filter out duplicates
+            original_count = len(mapped_df)
+            mapped_df = mapped_df[~mapped_df['duplicate_key'].isin(existing_trades['duplicate_key'])]
+            duplicate_count = original_count - len(mapped_df)
+            
+            # Clean up temporary column
+            mapped_df = mapped_df.drop('duplicate_key', axis=1)
+            existing_trades = existing_trades.drop('duplicate_key', axis=1)
+        else:
+            duplicate_count = 0
+        
+        # Combine with existing trades
+        if existing_trades.empty:
+            combined_df = mapped_df
+        else:
+            combined_df = pd.concat([existing_trades, mapped_df], ignore_index=True)
+        
+        # Save to file
+        save_trades(combined_df)
+        
+        return {
+            "success": True,
+            "imported_count": len(mapped_df),
+            "duplicate_count": duplicate_count,
+            "total_count": len(combined_df)
+        }
+        
+    except Exception as e:
+        return {"success": False, "error": f"Error processing Tastytrade data: {str(e)}"}
+
+
+def parse_tastytrade_row(row) -> dict:
+    """
+    Parse a single row from Tastytrade CSV format.
+    
+    Args:
+        row: A pandas Series representing a row from the CSV
+        
+    Returns:
+        dict: Parsed trade data or None if parsing fails
+    """
+    try:
+        # Extract basic information
+        symbol = str(row.get('Symbol', '')).upper().strip()
+        if not symbol:
+            return None
+            
+        # Use the 'Price' column for entry price, not 'MarketOrFill'
+        price_str = str(row.get('Price', ''))
+        # Remove non-numeric characters except decimal point and 'cr'/'db' indicators
+        price_parts = price_str.split()
+        if price_parts:
+            price_clean = ''.join(c for c in price_parts[0] if c.isdigit() or c == '.')
+            if price_clean:
+                price = float(price_clean)
+            else:
+                return None
+        else:
+            return None
+        
+        description = str(row.get('Description', ''))
+        status = str(row.get('Status', ''))
+        
+        # Parse date from Time or TimeStampAtType
+        time_info = str(row.get('Time', '')) or str(row.get('TimeStampAtType', ''))
+        # For now, we'll use today's date as we don't have a proper date parser
+        # In a real implementation, you'd parse the actual date from the time_info
+        date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Parse quantity and direction from description
+        quantity = 1
+        # Look for patterns like "-2" or "2" in the description
+        import re
+        qty_match = re.search(r'([+-]?\d+)', description)
+        if qty_match:
+            quantity = int(qty_match.group(1))
+        
+        # Determine if this is a credit (cr) or debit (db) transaction
+        is_credit = 'cr' in price_str.lower()
+        
+        # Adjust price and quantity based on transaction type
+        entry_price = price
+        exit_price = 0  # Default to open position
+        
+        # Determine status based on action keywords
+        # STO = Sell To Open (opening trade)
+        # BTO = Buy To Open (opening trade)
+        # STC = Sell To Close (closing trade)
+        # BTC = Buy To Close (closing trade)
+        if 'STC' in description or 'BTC' in description:
+            trade_status = 'Closed'  # Closing trade
+            # For closing trades, we might want to set exit price if we had more data
+            exit_price = entry_price  # Simplified for now
+        else:
+            trade_status = 'Open'  # Opening trade
+        
+        # Create trade data dictionary
+        trade_data = {
+            'date': date,
+            'symbol': symbol,
+            'strategy': 'Other',  # Will need to parse from description
+            'entry_price': entry_price,
+            'exit_price': exit_price,
+            'quantity': quantity,
+            'pnl': 0.0,  # Will be calculated later
+            'notes': description,
+            'status': trade_status
+        }
+        
+        # Try to determine strategy from description
+        # Look for option types first
+        if 'Put' in description:
+            # Check for specific actions
+            if 'STO' in description:  # Sell to Open
+                trade_data['strategy'] = 'Cash Secured Put'
+            elif 'BTC' in description:  # Buy to Close
+                trade_data['strategy'] = 'Long Put'
+            elif 'BTO' in description:  # Buy to Open
+                trade_data['strategy'] = 'Long Put'
+            elif 'STC' in description:  # Sell to Close
+                trade_data['strategy'] = 'Cash Secured Put'
+            else:
+                # Default for puts
+                trade_data['strategy'] = 'Long Put' if quantity > 0 else 'Cash Secured Put'
+        elif 'Call' in description:
+            # Check for specific actions
+            if 'STO' in description:  # Sell to Open
+                trade_data['strategy'] = 'Covered Call'
+            elif 'BTC' in description:  # Buy to Close
+                trade_data['strategy'] = 'Long Call'
+            elif 'BTO' in description:  # Buy to Open
+                trade_data['strategy'] = 'Long Call'
+            elif 'STC' in description:  # Sell to Close
+                trade_data['strategy'] = 'Covered Call'
+            else:
+                # Default for calls
+                trade_data['strategy'] = 'Long Call' if quantity > 0 else 'Covered Call'
+        elif any(word in description for word in ['Stock', 'Equity']):
+            trade_data['strategy'] = 'Long Stock' if quantity > 0 else 'Short Stock'
+        else:
+            # Check if it's a stock/future based on symbol pattern
+            if symbol.startswith('/') or symbol.endswith(('U5', 'H5', 'Z5')):  # Futures
+                trade_data['strategy'] = 'Long Futures' if quantity > 0 else 'Short Futures'
+            else:  # Regular stocks
+                trade_data['strategy'] = 'Long Stock' if quantity > 0 else 'Short Stock'
+        
+        return trade_data
+        
+    except Exception as e:
+        # If parsing fails, return None to skip this row
+        return None
 
 
 def export_to_csv(trades_df: pd.DataFrame, include_metrics: bool = False) -> bytes:
@@ -1084,29 +1317,40 @@ def display_import_section() -> None:
         if analysis:
             st.write(f"**File Info:** {analysis['row_count']} rows, {len(analysis['columns'])} columns")
             
+            # Show if this is detected as Tastytrade format
+            if analysis.get('is_tastytrade', False):
+                st.info("✅ Detected Tastytrade CSV format")
+            
             # Show sample data
             st.write("**Sample Data:**")
             st.dataframe(analysis['sample_data'])
             
             # Column mapping interface
             st.write("**Column Mapping:**")
-            column_mapping = {}
             
-            # Required fields
-            required_fields = ["date", "symbol", "strategy", "entry_price", "quantity"]
-            optional_fields = ["exit_price", "notes"]
-            
-            # Create mapping controls
-            for field in required_fields + optional_fields:
-                default_value = analysis['suggested_mappings'].get(field, "")
-                selected_column = st.selectbox(
-                    f"{field}{'*' if field in required_fields else ''}", 
-                    [""] + analysis['columns'], 
-                    index=analysis['columns'].index(default_value) + 1 if default_value in analysis['columns'] else 0,
-                    key=f"mapping_{field}"
-                )
-                if selected_column:
-                    column_mapping[field] = selected_column
+            # Special handling for Tastytrade format
+            if analysis.get('is_tastytrade', False):
+                st.info("Tastytrade format detected. We'll automatically map the columns and parse the trade details.")
+                # For Tastytrade, we don't need manual column mapping
+                column_mapping = {}  # Will be handled internally
+            else:
+                column_mapping = {}
+                
+                # Required fields
+                required_fields = ["date", "symbol", "strategy", "entry_price", "quantity"]
+                optional_fields = ["exit_price", "notes"]
+                
+                # Create mapping controls
+                for field in required_fields + optional_fields:
+                    default_value = analysis['suggested_mappings'].get(field, "")
+                    selected_column = st.selectbox(
+                        f"{field}{'*' if field in required_fields else ''}", 
+                        [""] + analysis['columns'], 
+                        index=analysis['columns'].index(default_value) + 1 if default_value in analysis['columns'] else 0,
+                        key=f"mapping_{field}"
+                    )
+                    if selected_column:
+                        column_mapping[field] = selected_column
             
             # Import options
             st.write("**Import Options:**")
@@ -1119,25 +1363,53 @@ def display_import_section() -> None:
                     uploaded_file.seek(0)
                     df = pd.read_csv(uploaded_file)
                     
-                    # Apply column mapping
-                    mapped_df = pd.DataFrame()
-                    for trade_field, csv_column in column_mapping.items():
-                        if csv_column and csv_column in df.columns:
-                            mapped_df[trade_field] = df[csv_column]
-                    
-                    # Show preview
-                    st.write("**Mapped Data Preview:**")
-                    st.dataframe(mapped_df)
-                    
-                    # Validate data
-                    validation_errors = validate_import_data(mapped_df)
-                    if validation_errors:
-                        st.warning("**Validation Errors Found:**")
-                        for error in validation_errors:
-                            st.write(f"- {error}")
-                    else:
-                        st.success("Data validation passed!")
+                    # Apply column mapping or Tastytrade processing
+                    if analysis.get('is_tastytrade', False):
+                        # Process a sample of Tastytrade data for preview
+                        sample_trades = []
+                        for idx, row in df.head(5).iterrows():
+                            try:
+                                trade_data = parse_tastytrade_row(row)
+                                if trade_data:
+                                    sample_trades.append(trade_data)
+                            except:
+                                continue
                         
+                        if sample_trades:
+                            mapped_df = pd.DataFrame(sample_trades)
+                            st.write("**Mapped Data Preview (Tastytrade format):**")
+                            st.dataframe(mapped_df)
+                            
+                            # Validate data
+                            validation_errors = validate_import_data(mapped_df)
+                            if validation_errors:
+                                st.warning("**Validation Errors Found:**")
+                                for error in validation_errors:
+                                    st.write(f"- {error}")
+                            else:
+                                st.success("Data validation passed!")
+                        else:
+                            st.warning("Unable to parse any trades from the Tastytrade data.")
+                    else:
+                        # Apply column mapping for standard format
+                        mapped_df = pd.DataFrame()
+                        for trade_field, csv_column in column_mapping.items():
+                            if csv_column and csv_column in df.columns:
+                                mapped_df[trade_field] = df[csv_column]
+                        
+                        # Show preview
+                        st.write("**Mapped Data Preview:**")
+                        st.dataframe(mapped_df)
+                        
+                        # Validate data
+                        validation_errors = validate_import_data(mapped_df)
+                        if validation_errors:
+                            st.warning("**Validation Errors Found:**")
+                            for error in validation_errors:
+                                st.write(f"- {error}")
+                        else:
+                            st.success("Data validation passed!")
+                            
                 except Exception as e:
                     st.error(f"Error previewing data: {str(e)}")
             
