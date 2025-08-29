@@ -271,43 +271,77 @@
 
 ***
 
-## Phase 9: Charts and Visualization
+## Phase 10: CSV Import Functionality
 
-### TradeCharts Class
-- [x] Create TradeCharts class with trade list input
-- [x] Implement `get_pnl_over_time()` method
-- [x] Implement `get_win_loss_distribution()` method
-- [x] Implement `get_strategy_performance()` method
-- [x] Implement `get_monthly_summary()` method
+### CSVImporter Class
+- [x] Create CSVImporter class with trade manager integration
+- [x] Implement `analyze_csv()` method for CSV structure analysis
+- [x] Implement `preview_import()` method for data preview
+- [x] Implement `import_trades()` method for actual import
+- [x] Implement `validate_import_data()` method for data validation
 
-### P&L Over Time Chart
-- [x] Create `create_pnl_chart()` function
-- [x] Use `st.line_chart` for cumulative P&L
-- [x] Show individual trade P&L and running total
-- [x] Handle both open and closed trades
-- [x] Add proper date formatting and scaling
+### CSV Upload Interface
+- [x] Create import section in UI
+- [x] Use `st.file_uploader` for CSV files
+- [x] Show file information (size, rows, columns)
+- [x] Display sample of uploaded data for review
 
-### Performance Distribution Charts
-- [x] Create win/loss histogram using `st.bar_chart`
-- [x] Show frequency of wins vs losses
-- [x] Display P&L distribution by trade size
-- [x] Create strategy performance comparison
+### Column Mapping Interface
+- [x] Create column mapper with selectboxes for each required field
+- [x] Show sample data for each column to aid mapping
+- [x] Handle optional fields (exit_price, notes)
+- [x] Auto-detect likely mappings based on column names
 
-### Summary Visualizations
-- [x] Add monthly performance bar chart
-- [x] Show symbol performance (top winners/losers)
-- [x] Display trade frequency over time
-- [x] Create portfolio value progression chart
+### Data Preview and Validation
+- [x] Show preview of mapped data before import
+- [x] Highlight validation errors in preview
+- [x] Allow users to fix data issues before import
+- [x] Show statistics about import (valid/invalid rows)
 
-### Chart Management
-- [x] Create `display_charts()` function
-- [x] Organize charts in tabs or expandable sections
-- [x] Handle empty datasets gracefully
-- [x] Show appropriate messages for insufficient data
+### Flexible Data Handling
+- [x] Handle various date formats automatically
+- [x] Convert text to appropriate numeric types
+- [x] Clean and normalize symbol names
+- [x] Handle missing values appropriately
+- [x] Support different decimal separators
 
-### Chart Features
-- [x] Update charts based on applied filters
-- [x] Add chart export options where possible
+### Import Options and Controls
+- [x] "Skip duplicate trades" checkbox
+- [x] Data validation level settings
+- [x] Dry run mode to test import without saving
+
+### Error Handling
+- [x] File format validation
+- [x] Missing required columns
+- [x] Data type conversion errors
+- [x] Duplicate detection and handling
+- [x] Large file size warnings
+
+### Import Summary and Feedback
+- [x] Show import results (successful/failed rows)
+- [x] Display detailed error messages
+- [x] Allow downloading of error report
+- [x] Confirm import completion
+
+### Integration with Main App
+- [x] Add import section to main interface
+- [x] Refresh trade display after successful import
+- [x] Update metrics and charts with imported data
+- [x] Maintain filter and view state after import
+
+### Export Template Functionality
+- [x] Generate CSV template with correct columns
+- [x] Include sample data in template
+- [x] Provide download button for template
+- [x] Document expected data formats
+
+### Testing
+- [x] Test with various CSV formats and structures
+- [x] Test column mapping with different data types
+- [x] Test error handling with invalid data
+- [x] Test duplicate detection and handling
+- [x] Test large file imports (performance)
+- [x] Validate data integrity after import
 
 ## Phase 9: Charts and Visualization
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 import os
 import numpy as np
+import io
 
 
 @dataclass
@@ -534,6 +535,366 @@ def display_charts(trades_df: pd.DataFrame) -> None:
             st.info("No closed trades available for monthly performance chart.")
 
 
+def analyze_csv(uploaded_file) -> dict:
+    """
+    Analyze CSV structure and suggest column mappings.
+    
+    Args:
+        uploaded_file: Uploaded CSV file
+        
+    Returns:
+        dict: Analysis results including column suggestions
+    """
+    # Read the CSV file
+    try:
+        df = pd.read_csv(uploaded_file, nrows=5)
+        uploaded_file.seek(0)  # Reset file pointer
+    except Exception as e:
+        st.error(f"Error reading CSV file: {str(e)}")
+        return {}
+    
+    # Get column names
+    csv_columns = df.columns.tolist()
+    
+    # Required trade fields
+    required_fields = [
+        "date", "symbol", "strategy", "entry_price", 
+        "exit_price", "quantity", "pnl", "notes", "status"
+    ]
+    
+    # Suggested mappings based on common column names
+    suggested_mappings = {}
+    
+    # Common variations for each field
+    field_variations = {
+        "date": ["date", "trade_date", "entry_date", "timestamp"],
+        "symbol": ["symbol", "ticker", "stock", "instrument"],
+        "strategy": ["strategy", "strat", "approach"],
+        "entry_price": ["entry_price", "entry", "buy_price", "purchase_price"],
+        "exit_price": ["exit_price", "sell_price", "sale_price", "close_price"],
+        "quantity": ["quantity", "qty", "shares", "contracts", "size"],
+        "pnl": ["pnl", "profit", "loss", "gain"],
+        "notes": ["notes", "comment", "description", "remarks"],
+        "status": ["status", "state"]
+    }
+    
+    # Try to auto-map columns
+    for field in required_fields:
+        for col in csv_columns:
+            if col.lower() in field_variations[field]:
+                suggested_mappings[field] = col
+                break
+    
+    return {
+        "columns": csv_columns,
+        "sample_data": df.head(),
+        "suggested_mappings": suggested_mappings,
+        "row_count": len(df)
+    }
+
+
+def validate_import_data(df: pd.DataFrame) -> List[str]:
+    """
+    Validate import data and return any errors.
+    
+    Args:
+        df (pd.DataFrame): DataFrame with mapped trade data
+        
+    Returns:
+        List[str]: List of validation errors
+    """
+    errors = []
+    
+    # Check for required columns
+    required_columns = ["date", "symbol", "strategy", "entry_price", "quantity"]
+    for col in required_columns:
+        if col not in df.columns:
+            errors.append(f"Missing required column: {col}")
+    
+    if errors:
+        return errors
+    
+    # Validate data types and values
+    for idx, row in df.iterrows():
+        # Validate date format
+        try:
+            pd.to_datetime(row['date'])
+        except:
+            errors.append(f"Row {idx+1}: Invalid date format '{row['date']}'")
+        
+        # Validate symbol
+        if pd.isna(row['symbol']) or str(row['symbol']).strip() == "":
+            errors.append(f"Row {idx+1}: Missing symbol")
+        
+        # Validate strategy
+        if row['strategy'] not in STRATEGY_OPTIONS:
+            errors.append(f"Row {idx+1}: Invalid strategy '{row['strategy']}'")
+        
+        # Validate entry price
+        try:
+            entry_price = float(row['entry_price'])
+            if entry_price <= 0:
+                errors.append(f"Row {idx+1}: Entry price must be positive")
+        except:
+            errors.append(f"Row {idx+1}: Invalid entry price '{row['entry_price']}'")
+        
+        # Validate quantity
+        try:
+            quantity = int(row['quantity'])
+            if quantity == 0:
+                errors.append(f"Row {idx+1}: Quantity cannot be zero")
+        except:
+            errors.append(f"Row {idx+1}: Invalid quantity '{row['quantity']}'")
+        
+        # Validate exit price if present
+        if 'exit_price' in row and not pd.isna(row['exit_price']):
+            try:
+                float(row['exit_price'])
+            except:
+                errors.append(f"Row {idx+1}: Invalid exit price '{row['exit_price']}'")
+    
+    return errors
+
+
+def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = False) -> dict:
+    """
+    Import trades from CSV file.
+    
+    Args:
+        uploaded_file: Uploaded CSV file
+        column_mapping (dict): Mapping of CSV columns to trade fields
+        skip_duplicates (bool): Whether to skip duplicate trades
+        
+    Returns:
+        dict: Import results including success/failure counts
+    """
+    try:
+        # Read the CSV file
+        df = pd.read_csv(uploaded_file)
+    except Exception as e:
+        return {"success": False, "error": f"Error reading CSV file: {str(e)}"}
+    
+    # Apply column mapping
+    mapped_df = pd.DataFrame()
+    for trade_field, csv_column in column_mapping.items():
+        if csv_column in df.columns:
+            mapped_df[trade_field] = df[csv_column]
+        else:
+            # Handle missing columns by filling with default values
+            if trade_field == "exit_price":
+                mapped_df[trade_field] = 0.0
+            elif trade_field == "notes":
+                mapped_df[trade_field] = ""
+            elif trade_field == "pnl":
+                mapped_df[trade_field] = 0.0
+            elif trade_field == "status":
+                mapped_df[trade_field] = "Open"  # Default to Open
+            else:
+                mapped_df[trade_field] = None
+    
+    # Validate data
+    validation_errors = validate_import_data(mapped_df)
+    if validation_errors:
+        return {
+            "success": False, 
+            "error": "Validation errors found",
+            "validation_errors": validation_errors
+        }
+    
+    # Clean and normalize data
+    try:
+        # Convert date column to proper format
+        mapped_df['date'] = pd.to_datetime(mapped_df['date']).dt.strftime('%Y-%m-%d')
+        
+        # Convert numeric columns
+        mapped_df['entry_price'] = pd.to_numeric(mapped_df['entry_price'])
+        mapped_df['quantity'] = pd.to_numeric(mapped_df['quantity'])
+        
+        # Handle exit_price (can be NaN for open trades)
+        if 'exit_price' in mapped_df.columns:
+            mapped_df['exit_price'] = pd.to_numeric(mapped_df['exit_price'], errors='coerce').fillna(0.0)
+        else:
+            mapped_df['exit_price'] = 0.0
+        
+        # Calculate PnL and status
+        mapped_df['pnl'] = mapped_df.apply(
+            lambda row: calculate_pnl(row['entry_price'], row['exit_price'], row['quantity']), 
+            axis=1
+        )
+        mapped_df['status'] = mapped_df['exit_price'].apply(
+            lambda x: 'Closed' if x > 0 else 'Open'
+        )
+        
+        # Normalize symbol names (uppercase)
+        mapped_df['symbol'] = mapped_df['symbol'].astype(str).str.upper().str.strip()
+        
+        # Handle notes (fill NaN with empty string)
+        if 'notes' in mapped_df.columns:
+            mapped_df['notes'] = mapped_df['notes'].fillna("").astype(str)
+        else:
+            mapped_df['notes'] = ""
+            
+    except Exception as e:
+        return {"success": False, "error": f"Error processing data: {str(e)}"}
+    
+    # Load existing trades
+    existing_trades = load_trades()
+    
+    # Check for duplicates if requested
+    if skip_duplicates and not existing_trades.empty:
+        # Create a key for identifying duplicates (date, symbol, entry_price)
+        mapped_df['duplicate_key'] = mapped_df.apply(
+            lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
+        )
+        existing_trades['duplicate_key'] = existing_trades.apply(
+            lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
+        )
+        
+        # Filter out duplicates
+        original_count = len(mapped_df)
+        mapped_df = mapped_df[~mapped_df['duplicate_key'].isin(existing_trades['duplicate_key'])]
+        duplicate_count = original_count - len(mapped_df)
+        
+        # Clean up temporary column
+        mapped_df = mapped_df.drop('duplicate_key', axis=1)
+        existing_trades = existing_trades.drop('duplicate_key', axis=1)
+    else:
+        duplicate_count = 0
+    
+    # Combine with existing trades
+    if existing_trades.empty:
+        combined_df = mapped_df
+    else:
+        combined_df = pd.concat([existing_trades, mapped_df], ignore_index=True)
+    
+    # Save to file
+    try:
+        save_trades(combined_df)
+        return {
+            "success": True,
+            "imported_count": len(mapped_df),
+            "duplicate_count": duplicate_count,
+            "total_count": len(combined_df)
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Error saving trades: {str(e)}"}
+
+
+def display_import_section() -> None:
+    """
+    Display the CSV import section in the UI.
+    """
+    st.subheader("📁 CSV Import")
+    
+    # File uploader
+    uploaded_file = st.file_uploader(
+        "Upload CSV File", 
+        type="csv",
+        key="csv_uploader"
+    )
+    
+    if uploaded_file is not None:
+        # Analyze the uploaded file
+        analysis = analyze_csv(uploaded_file)
+        
+        if analysis:
+            st.write(f"**File Info:** {analysis['row_count']} rows, {len(analysis['columns'])} columns")
+            
+            # Show sample data
+            st.write("**Sample Data:**")
+            st.dataframe(analysis['sample_data'])
+            
+            # Column mapping interface
+            st.write("**Column Mapping:**")
+            column_mapping = {}
+            
+            # Required fields
+            required_fields = ["date", "symbol", "strategy", "entry_price", "quantity"]
+            optional_fields = ["exit_price", "notes"]
+            
+            # Create mapping controls
+            for field in required_fields + optional_fields:
+                default_value = analysis['suggested_mappings'].get(field, "")
+                selected_column = st.selectbox(
+                    f"{field}{'*' if field in required_fields else ''}", 
+                    [""] + analysis['columns'], 
+                    index=analysis['columns'].index(default_value) + 1 if default_value in analysis['columns'] else 0,
+                    key=f"mapping_{field}"
+                )
+                if selected_column:
+                    column_mapping[field] = selected_column
+            
+            # Import options
+            st.write("**Import Options:**")
+            skip_duplicates = st.checkbox("Skip duplicate trades", value=True)
+            
+            # Preview mapped data
+            if st.button("Preview Mapped Data"):
+                try:
+                    # Read the CSV file again
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file)
+                    
+                    # Apply column mapping
+                    mapped_df = pd.DataFrame()
+                    for trade_field, csv_column in column_mapping.items():
+                        if csv_column and csv_column in df.columns:
+                            mapped_df[trade_field] = df[csv_column]
+                    
+                    # Show preview
+                    st.write("**Mapped Data Preview:**")
+                    st.dataframe(mapped_df)
+                    
+                    # Validate data
+                    validation_errors = validate_import_data(mapped_df)
+                    if validation_errors:
+                        st.warning("**Validation Errors Found:**")
+                        for error in validation_errors:
+                            st.write(f"- {error}")
+                    else:
+                        st.success("Data validation passed!")
+                        
+                except Exception as e:
+                    st.error(f"Error previewing data: {str(e)}")
+            
+            # Import button
+            if st.button("Import Trades"):
+                try:
+                    uploaded_file.seek(0)
+                    result = import_trades(uploaded_file, column_mapping, skip_duplicates)
+                    
+                    if result["success"]:
+                        st.success(
+                            f"Successfully imported {result['imported_count']} trades! "
+                            f"({result['duplicate_count']} duplicates skipped)"
+                        )
+                        # Rerun to refresh data
+                        st.experimental_rerun()
+                    else:
+                        st.error(f"Import failed: {result['error']}")
+                        if "validation_errors" in result:
+                            st.write("**Validation Errors:**")
+                            for error in result["validation_errors"]:
+                                st.write(f"- {error}")
+                except Exception as e:
+                    st.error(f"Error during import: {str(e)}")
+    else:
+        # Show CSV template for download
+        template_data = pd.DataFrame(columns=[
+            "date", "symbol", "strategy", "entry_price", 
+            "exit_price", "quantity", "notes"
+        ])
+        template_csv = template_data.to_csv(index=False)
+        
+        st.write("**Need a template?** Download this CSV template to get started:")
+        st.download_button(
+            label="Download CSV Template",
+            data=template_csv,
+            file_name="trades_template.csv",
+            mime="text/csv"
+        )
+
+
 def main():
     """Main application function."""
     st.set_page_config(
@@ -547,6 +908,8 @@ def main():
     # Initialize session state for form
     if 'show_form' not in st.session_state:
         st.session_state.show_form = False
+    if 'show_import' not in st.session_state:
+        st.session_state.show_import = False
     
     # Load existing trades
     trades_df = load_trades()
@@ -564,6 +927,10 @@ def main():
         # Toggle form visibility
         if st.button("➕ Add New Trade"):
             st.session_state.show_form = not st.session_state.show_form
+        
+        # Toggle import visibility
+        if st.button("📁 Import CSV"):
+            st.session_state.show_import = not st.session_state.show_import
         
         # Export button
         if not trades_df.empty:
@@ -634,6 +1001,11 @@ def main():
                             st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Error adding trade: {str(e)}")
+    
+    # CSV import section (collapsible)
+    if st.session_state.show_import:
+        with st.expander("📁 CSV Import", expanded=True):
+            display_import_section()
     
     # Show filter summary
     if len(filtered_trades_df) != len(trades_df):
