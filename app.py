@@ -12,6 +12,8 @@ import os
 import numpy as np
 import io
 import zipfile
+import json
+import hashlib
 
 
 @dataclass
@@ -46,8 +48,61 @@ STRATEGY_OPTIONS = [
 DATA_DIR = "data"
 TRADES_FILE = os.path.join(DATA_DIR, "trades.csv")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
+CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 
 
+class TradeValidationError(Exception):
+    """Raised when trade data fails validation."""
+    pass
+
+
+class StorageError(Exception):
+    """Raised when file operations fail."""
+    pass
+
+
+def load_config() -> dict:
+    """
+    Load application configuration.
+    
+    Returns:
+        dict: Configuration dictionary
+    """
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            # Return default config if there's an error
+            pass
+    
+    # Default configuration
+    return {
+        "currency": "USD",
+        "date_format": "YYYY-MM-DD",
+        "default_strategy": "Long Stock",
+        "theme": "light",
+        "auto_save_interval": 300,  # 5 minutes
+        "backup_enabled": True
+    }
+
+
+def save_config(config: dict) -> None:
+    """
+    Save application configuration.
+    
+    Args:
+        config (dict): Configuration dictionary
+    """
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+    except Exception as e:
+        raise StorageError(f"Failed to save configuration: {str(e)}")
+
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes
 def load_trades() -> pd.DataFrame:
     """
     Load trades from CSV file.
@@ -56,7 +111,10 @@ def load_trades() -> pd.DataFrame:
         pd.DataFrame: DataFrame containing all trades
     """
     if os.path.exists(TRADES_FILE):
-        return pd.read_csv(TRADES_FILE)
+        try:
+            return pd.read_csv(TRADES_FILE)
+        except Exception as e:
+            raise StorageError(f"Failed to load trades: {str(e)}")
     else:
         # Return empty DataFrame with correct columns
         return pd.DataFrame(columns=[
@@ -72,8 +130,11 @@ def save_trades(df: pd.DataFrame) -> None:
     Args:
         df (pd.DataFrame): DataFrame containing all trades
     """
-    os.makedirs(DATA_DIR, exist_ok=True)
-    df.to_csv(TRADES_FILE, index=False)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        df.to_csv(TRADES_FILE, index=False)
+    except Exception as e:
+        raise StorageError(f"Failed to save trades: {str(e)}")
 
 
 def calculate_pnl(entry: float, exit: float, quantity: int) -> float:
@@ -91,6 +152,54 @@ def calculate_pnl(entry: float, exit: float, quantity: int) -> float:
     if exit == 0:
         return 0.0
     return (exit - entry) * quantity
+
+
+def validate_trade_data(trade_data: dict) -> None:
+    """
+    Validate trade data.
+    
+    Args:
+        trade_data (dict): Dictionary containing trade information
+        
+    Raises:
+        TradeValidationError: If validation fails
+    """
+    # Validate required fields
+    if not trade_data.get('symbol'):
+        raise TradeValidationError("Symbol is required")
+    
+    if not trade_data.get('strategy'):
+        raise TradeValidationError("Strategy is required")
+    
+    # Validate numeric fields
+    try:
+        entry_price = float(trade_data.get('entry_price', 0))
+        if entry_price <= 0:
+            raise TradeValidationError("Entry price must be positive")
+    except (ValueError, TypeError):
+        raise TradeValidationError("Entry price must be a valid number")
+    
+    try:
+        quantity = int(trade_data.get('quantity', 0))
+        if quantity == 0:
+            raise TradeValidationError("Quantity cannot be zero")
+    except (ValueError, TypeError):
+        raise TradeValidationError("Quantity must be a valid integer")
+    
+    # Validate exit price if provided
+    exit_price = trade_data.get('exit_price', 0)
+    if exit_price:
+        try:
+            float(exit_price)
+        except (ValueError, TypeError):
+            raise TradeValidationError("Exit price must be a valid number")
+    
+    # Validate business rules
+    if quantity > 0 and "Short" in trade_data.get('strategy', ""):
+        raise TradeValidationError("Short strategies require negative quantity")
+    
+    if quantity < 0 and "Long" in trade_data.get('strategy', ""):
+        raise TradeValidationError("Long strategies require positive quantity")
 
 
 def get_summary_stats(df: pd.DataFrame) -> Dict[str, float]:
@@ -143,6 +252,9 @@ def add_trade(trade_data: dict) -> None:
     Args:
         trade_data (dict): Dictionary containing trade information
     """
+    # Validate trade data
+    validate_trade_data(trade_data)
+    
     df = load_trades()
     
     # Calculate PnL
@@ -1274,8 +1386,130 @@ def display_data_management_section(trades_df: pd.DataFrame) -> None:
                 st.error(f"Error resetting data: {str(e)}")
 
 
+def display_settings_section() -> None:
+    """
+    Display the settings section in the UI.
+    """
+    st.subheader("⚙️ Settings")
+    
+    # Load current configuration
+    config = load_config()
+    
+    # Currency selection
+    currency = st.selectbox(
+        "Currency",
+        ["USD", "EUR", "GBP", "JPY", "CAD", "AUD"],
+        index=["USD", "EUR", "GBP", "JPY", "CAD", "AUD"].index(config.get("currency", "USD"))
+    )
+    
+    # Date format selection
+    date_format = st.selectbox(
+        "Date Format",
+        ["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY"],
+        index=["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY"].index(config.get("date_format", "YYYY-MM-DD"))
+    )
+    
+    # Default strategy
+    default_strategy = st.selectbox(
+        "Default Strategy",
+        STRATEGY_OPTIONS,
+        index=STRATEGY_OPTIONS.index(config.get("default_strategy", "Long Stock"))
+    )
+    
+    # Theme selection
+    theme = st.selectbox(
+        "Theme",
+        ["light", "dark"],
+        index=["light", "dark"].index(config.get("theme", "light"))
+    )
+    
+    # Auto-save interval
+    auto_save_interval = st.slider(
+        "Auto-save Interval (seconds)",
+        min_value=30,
+        max_value=3600,
+        value=config.get("auto_save_interval", 300),
+        step=30
+    )
+    
+    # Backup settings
+    backup_enabled = st.checkbox(
+        "Enable Automatic Backups",
+        value=config.get("backup_enabled", True)
+    )
+    
+    # Save settings button
+    if st.button("Save Settings"):
+        new_config = {
+            "currency": currency,
+            "date_format": date_format,
+            "default_strategy": default_strategy,
+            "theme": theme,
+            "auto_save_interval": auto_save_interval,
+            "backup_enabled": backup_enabled
+        }
+        
+        try:
+            save_config(new_config)
+            st.success("Settings saved successfully!")
+            st.experimental_rerun()
+        except Exception as e:
+            st.error(f"Error saving settings: {str(e)}")
+
+
+def display_help_section() -> None:
+    """
+    Display the help section in the UI.
+    """
+    st.subheader("❓ Help")
+    
+    st.write("### Getting Started")
+    st.write("""
+    1. **Add a Trade**: Click the "➕ Add New Trade" button in the sidebar to manually enter trade details.
+    2. **Import Trades**: Click the "📁 Import CSV" button to import trades from a CSV file.
+    3. **View Performance**: Use the filters in the sidebar to narrow down your trades, then view the charts and metrics.
+    4. **Export Data**: Click the "💾 Export Data" button to export your trades or create backups.
+    5. **Manage Data**: Use the "⚙️ Data Management" section to clean up duplicates or reset your data.
+    """)
+    
+    st.write("### Keyboard Shortcuts")
+    st.write("""
+    - **Ctrl + Shift + A**: Toggle Add New Trade form
+    - **Ctrl + Shift + I**: Toggle Import CSV form
+    - **Ctrl + Shift + E**: Toggle Export Data form
+    - **Ctrl + Shift + M**: Toggle Data Management form
+    - **Ctrl + Shift + S**: Toggle Settings form
+    - **Ctrl + Shift + H**: Toggle Help form
+    """)
+    
+    st.write("### Data Format for CSV Import")
+    st.write("""
+    When importing trades from CSV, ensure your file has the following columns:
+    - **date**: Trade date in YYYY-MM-DD format
+    - **symbol**: Stock ticker symbol (e.g., AAPL)
+    - **strategy**: Trading strategy (must match predefined options)
+    - **entry_price**: Price at which you entered the position
+    - **exit_price**: Price at which you closed the position (0 for open trades)
+    - **quantity**: Number of shares/contracts (negative for short positions)
+    - **notes**: Optional notes about the trade
+    
+    Download the CSV template for an example of the correct format.
+    """)
+    
+    st.write("### Troubleshooting")
+    st.write("""
+    - **Import fails**: Check that your CSV file has the required columns and correct data types.
+    - **Charts not showing**: Ensure you have closed trades for the charts to display.
+    - **Data not saving**: Check that you have write permissions in the application directory.
+    - **Performance issues**: For large datasets, consider using filters to reduce the data volume.
+    """)
+
+
 def main():
     """Main application function."""
+    # Load configuration
+    config = load_config()
+    
     st.set_page_config(
         page_title="Simple Trading Journal",
         page_icon="📊",
@@ -1293,9 +1527,20 @@ def main():
         st.session_state.show_export = False
     if 'show_management' not in st.session_state:
         st.session_state.show_management = False
+    if 'show_settings' not in st.session_state:
+        st.session_state.show_settings = False
+    if 'show_help' not in st.session_state:
+        st.session_state.show_help = False
     
     # Load existing trades
-    trades_df = load_trades()
+    try:
+        trades_df = load_trades()
+    except StorageError as e:
+        st.error(f"Error loading trades: {str(e)}")
+        trades_df = pd.DataFrame(columns=[
+            "date", "symbol", "strategy", "entry_price", 
+            "exit_price", "quantity", "pnl", "notes", "status"
+        ])
     
     # Create filter sidebar and get filter config
     filter_config = create_filter_sidebar(trades_df)
@@ -1322,6 +1567,14 @@ def main():
         # Toggle data management visibility
         if st.button("⚙️ Data Management"):
             st.session_state.show_management = not st.session_state.show_management
+        
+        # Toggle settings visibility
+        if st.button("⚙️ Settings"):
+            st.session_state.show_settings = not st.session_state.show_settings
+        
+        # Toggle help visibility
+        if st.button("❓ Help"):
+            st.session_state.show_help = not st.session_state.show_help
     
     # Add trade form (collapsible)
     if st.session_state.show_form:
@@ -1332,7 +1585,11 @@ def main():
                 with col1:
                     date = st.date_input("Date", value=datetime.now().date())
                     symbol = st.text_input("Symbol")
-                    strategy = st.selectbox("Strategy", STRATEGY_OPTIONS)
+                    strategy = st.selectbox(
+                        "Strategy", 
+                        STRATEGY_OPTIONS,
+                        index=STRATEGY_OPTIONS.index(config.get("default_strategy", "Long Stock"))
+                    )
                 
                 with col2:
                     entry_price = st.number_input("Entry Price", min_value=0.0, step=0.01)
@@ -1345,35 +1602,31 @@ def main():
                 submitted = st.form_submit_button("Add Trade")
                 
                 if submitted:
-                    # Validate required fields
-                    if not symbol:
-                        st.error("Symbol is required")
-                    elif entry_price <= 0:
-                        st.error("Entry price must be greater than 0")
-                    elif quantity == 0:
-                        st.error("Quantity must not be zero")
-                    else:
-                        # Add trade
-                        trade_data = {
-                            "date": date.strftime("%Y-%m-%d"),
-                            "symbol": symbol.upper(),
-                            "strategy": strategy,
-                            "entry_price": entry_price,
-                            "exit_price": exit_price,
-                            "quantity": quantity,
-                            "notes": notes,
-                            "status": "Open" if exit_price == 0 else "Closed"
-                        }
-                        
-                        try:
-                            add_trade(trade_data)
-                            st.success("Trade added successfully!")
-                            # Reset form visibility
-                            st.session_state.show_form = False
-                            # Rerun to refresh data
-                            st.experimental_rerun()
-                        except Exception as e:
-                            st.error(f"Error adding trade: {str(e)}")
+                    # Add trade
+                    trade_data = {
+                        "date": date.strftime("%Y-%m-%d"),
+                        "symbol": symbol.upper(),
+                        "strategy": strategy,
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "quantity": quantity,
+                        "notes": notes,
+                        "status": "Open" if exit_price == 0 else "Closed"
+                    }
+                    
+                    try:
+                        add_trade(trade_data)
+                        st.success("Trade added successfully!")
+                        # Reset form visibility
+                        st.session_state.show_form = False
+                        # Rerun to refresh data
+                        st.experimental_rerun()
+                    except TradeValidationError as e:
+                        st.error(f"Validation error: {str(e)}")
+                    except StorageError as e:
+                        st.error(f"Storage error: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Error adding trade: {str(e)}")
     
     # CSV import section (collapsible)
     if st.session_state.show_import:
@@ -1389,6 +1642,16 @@ def main():
     if st.session_state.show_management:
         with st.expander("⚙️ Data Management", expanded=True):
             display_data_management_section(trades_df)
+    
+    # Settings section (collapsible)
+    if st.session_state.show_settings:
+        with st.expander("⚙️ Settings", expanded=True):
+            display_settings_section()
+    
+    # Help section (collapsible)
+    if st.session_state.show_help:
+        with st.expander("❓ Help", expanded=True):
+            display_help_section()
     
     # Show filter summary
     if len(filtered_trades_df) != len(trades_df):
@@ -1436,11 +1699,12 @@ def main():
         
         # Save changes if any
         if not edited_df.equals(filtered_trades_df):
-            # We need to merge the changes back to the original dataframe
-            # This is a bit complex, so we'll just save all trades
-            save_trades(edited_df)
-            st.success("Changes saved!")
-            st.experimental_rerun()
+            try:
+                save_trades(edited_df)
+                st.success("Changes saved!")
+                st.experimental_rerun()
+            except StorageError as e:
+                st.error(f"Error saving changes: {str(e)}")
 
 
 if __name__ == "__main__":
