@@ -137,21 +137,65 @@ def save_trades(df: pd.DataFrame) -> None:
         raise StorageError(f"Failed to save trades: {str(e)}")
 
 
-def calculate_pnl(entry: float, exit: float, quantity: int) -> float:
+def calculate_pnl(entry: float, exit: float, quantity: int, strategy: str = "Other") -> float:
     """
-    Calculate profit/loss for a trade.
+    Calculate profit/loss for a trade, accounting for options-specific logic.
+    
+    For options, P&L calculation depends on whether you're buying or selling:
+    - Selling options (Cash Secured Put, Covered Call): Receive credit when selling, pay debit when buying back
+      Profit = (Credit Received - Debit Paid) * Number of Contracts * 100
+    - Buying options (Long Put, Long Call): Pay debit when buying, receive credit when selling
+      Profit = (Credit Received - Debit Paid) * Number of Contracts * 100
+    - Stock trades: (Exit Price - Entry Price) * Quantity
     
     Args:
-        entry (float): Entry price
-        exit (float): Exit price (0 for open trades)
-        quantity (int): Number of shares/contracts
+        entry (float): Entry price (credit for sellers, debit for buyers)
+        exit (float): Exit price (debit for sellers, credit for buyers, 0 for open trades)
+        quantity (int): Number of shares/contracts (negative for sells, positive for buys)
+        strategy (str): Trading strategy (for options-specific calculations)
         
     Returns:
         float: Profit/loss value
     """
+    # For open trades, P&L is always 0
     if exit == 0:
         return 0.0
-    return (exit - entry) * quantity
+    
+    # For options strategies, multiply by 100 (each contract represents 100 shares)
+    if strategy in ["Cash Secured Put", "Covered Call", "Long Put", "Long Call", "Short Put", "Short Call"]:
+        # Options strategies: each contract represents 100 shares
+        multiplier = 100
+        is_options = True
+    else:
+        # Stock and other strategies: each unit represents 1 share
+        multiplier = 1
+        is_options = False
+    
+    # For all strategies, the fundamental calculation is:
+    # Profit = (Money Received - Money Paid) * Quantity * Multiplier
+    # 
+    # For sellers (Cash Secured Put, Covered Call):
+    #   - They receive credit when selling (entry)
+    #   - They pay debit when buying back (exit)
+    #   - Profit = (Credit Received - Debit Paid) * |Quantity| * Multiplier
+    #
+    # For buyers (Long Put, Long Call):
+    #   - They pay debit when buying (entry)
+    #   - They receive credit when selling (exit)
+    #   - Profit = (Credit Received - Debit Paid) * |Quantity| * Multiplier
+    #
+    # For stock:
+    #   - Traditional calculation: (Exit - Entry) * Quantity
+    
+    if is_options:
+        # For options, it's always (Money Received - Money Paid)
+        # The entry/exit prices are already credits/debits, so we just subtract them
+        # For sellers: entry = credit received, exit = debit paid
+        # For buyers: entry = debit paid, exit = credit received
+        return (entry - exit) * abs(quantity) * multiplier
+    else:
+        # For stock and other non-options strategies, use traditional calculation
+        return (exit - entry) * quantity * multiplier
 
 
 def validate_trade_data(trade_data: dict) -> None:
@@ -257,11 +301,12 @@ def add_trade(trade_data: dict) -> None:
     
     df = load_trades()
     
-    # Calculate PnL
+    # Calculate PnL with strategy awareness
     trade_data['pnl'] = calculate_pnl(
         trade_data['entry_price'], 
         trade_data['exit_price'], 
-        trade_data['quantity']
+        trade_data['quantity'],
+        trade_data.get('strategy', 'Other')
     )
     
     # Determine status
@@ -452,7 +497,7 @@ def create_filter_sidebar(trades_df: pd.DataFrame) -> dict:
     # Clear filters button
     if st.sidebar.button("Clear All Filters"):
         st.session_state.clear()
-        st.experimental_rerun()
+        st.rerun()
     
     return filter_config
 
@@ -857,9 +902,14 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
         else:
             mapped_df['exit_price'] = 0.0
         
-        # Calculate PnL and status
+        # Calculate PnL and status with strategy awareness
         mapped_df['pnl'] = mapped_df.apply(
-            lambda row: calculate_pnl(row['entry_price'], row['exit_price'], row['quantity']), 
+            lambda row: calculate_pnl(
+                row['entry_price'], 
+                row['exit_price'], 
+                row['quantity'],
+                row.get('strategy', 'Other')
+            ), 
             axis=1
         )
         mapped_df['status'] = mapped_df['exit_price'].apply(
@@ -951,6 +1001,17 @@ def import_tastytrade_trades(df: pd.DataFrame, skip_duplicates: bool = False) ->
         
         # Convert to DataFrame
         mapped_df = pd.DataFrame(processed_trades)
+        
+        # Recalculate P&L with strategy awareness
+        mapped_df['pnl'] = mapped_df.apply(
+            lambda row: calculate_pnl(
+                row['entry_price'], 
+                row['exit_price'], 
+                row['quantity'],
+                row.get('strategy', 'Other')
+            ), 
+            axis=1
+        )
         
         # Validate data
         validation_errors = validate_import_data(mapped_df)
@@ -1425,7 +1486,7 @@ def display_import_section() -> None:
                             f"({result['duplicate_count']} duplicates skipped)"
                         )
                         # Rerun to refresh data
-                        st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error(f"Import failed: {result['error']}")
                         if "validation_errors" in result:
@@ -1560,7 +1621,7 @@ def display_export_section(trades_df: pd.DataFrame, filtered_trades_df: pd.DataF
                 selected_path = os.path.join(BACKUP_DIR, selected_backup)
                 if restore_from_backup(selected_path):
                     st.success("Backup restored successfully!")
-                    st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error("Failed to restore backup.")
         else:
@@ -1627,7 +1688,7 @@ def display_data_management_section(trades_df: pd.DataFrame) -> None:
                 cleaned_df = cleaned_df.drop('duplicate_key', axis=1)
                 save_trades(cleaned_df)
                 st.success("Duplicates removed successfully!")
-                st.experimental_rerun()
+                st.rerun()
         else:
             st.success("No duplicates found.")
         
@@ -1653,7 +1714,7 @@ def display_data_management_section(trades_df: pd.DataFrame) -> None:
                 save_trades(empty_df)
                 
                 st.success("All data has been reset!")
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Error resetting data: {str(e)}")
 
@@ -1724,7 +1785,7 @@ def display_settings_section() -> None:
         try:
             save_config(new_config)
             st.success("Settings saved successfully!")
-            st.experimental_rerun()
+            st.rerun()
         except Exception as e:
             st.error(f"Error saving settings: {str(e)}")
 
@@ -1892,7 +1953,7 @@ def main():
                         # Reset form visibility
                         st.session_state.show_form = False
                         # Rerun to refresh data
-                        st.experimental_rerun()
+                        st.rerun()
                     except TradeValidationError as e:
                         st.error(f"Validation error: {str(e)}")
                     except StorageError as e:
@@ -1962,7 +2023,7 @@ def main():
             use_container_width=True,
             num_rows="dynamic",
             column_config={
-                "date": st.column_config.DateColumn("Date"),
+                "date": st.column_config.TextColumn("Date"),
                 "entry_price": st.column_config.NumberColumn("Entry Price", format="$%.2f"),
                 "exit_price": st.column_config.NumberColumn("Exit Price", format="$%.2f"),
                 "pnl": st.column_config.NumberColumn("P&L", format="$%.2f"),
@@ -1974,7 +2035,7 @@ def main():
             try:
                 save_trades(edited_df)
                 st.success("Changes saved!")
-                st.experimental_rerun()
+                st.rerun()
             except StorageError as e:
                 st.error(f"Error saving changes: {str(e)}")
 
