@@ -553,8 +553,11 @@ def analyze_csv(uploaded_file) -> dict:
     # Robust tastytrade detection: need Symbol + Description + (MarketOrFill or Price)
     is_tastytrade = (
         "Symbol" in csv_columns
-        and "Description" in csv_columns
-        and ("MarketOrFill" in csv_columns or "Price" in csv_columns)
+    ) and (
+        "Description" in csv_columns
+    ) and (
+        ("MarketOrFill" in csv_columns) or
+        ("Price" in csv_columns)
     )
 
     # Required trade fields
@@ -652,8 +655,11 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
 
     is_tastytrade = (
         "Symbol" in df.columns
-        and "Description" in df.columns
-        and ("MarketOrFill" in df.columns or "Price" in df.columns)
+    ) and (
+        "Description" in df.columns
+    ) and (
+        ("MarketOrFill" in df.columns) or
+        ("Price" in df.columns)
     )
     if is_tastytrade:
         return import_tastytrade_trades(df, skip_duplicates)
@@ -820,12 +826,12 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
         if not symbol:
             return None
 
-        # Prefer MarketOrFill, fallback to Price (both often carry 'cr'/'db')
+        # Prefer MarketOrFill, fallback to Price (both may contain 'cr'/'db')
         price_field_text = str(row.get("MarketOrFill", "") or row.get("Price", "")).strip()
         if not price_field_text:
             return None
 
-        # First numeric token (e.g., 1.62 from "1.62 cr")
+        # First numeric token (e.g., 1.62 out of "1.62 cr")
         m_price = re.search(r"([0-9]*\.?[0-9]+)", price_field_text)
         if not m_price:
             return None
@@ -837,7 +843,7 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
 
         desc = str(row.get("Description", "")).strip()
 
-        # Action and normalize to upper
+        # Action, case-insensitive
         m_act = re.search(r"(STO|BTC|BTO|STC)\b", desc, flags=re.IGNORECASE)
         action = m_act.group(1).upper() if m_act else None
 
@@ -853,7 +859,7 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
         m_strike = re.search(r"\s(\d+(?:\.\d+)?)\s(?:Call|Put)\b", desc, flags=re.IGNORECASE)
         strike = float(m_strike.group(1)) if m_strike else None
 
-        # Expiry token: try Mon dd -> canonical YYYY-MM-DD, else fallback "<Mon> <dd> Exp"
+        # Expiry token: canonical YYYY-MM-DD from "<Mon> <dd>", else fallback "<Mon> <dd> Exp"
         expiry_token = None
         m_md = re.search(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b", desc, flags=re.IGNORECASE)
         if m_md:
@@ -866,21 +872,19 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
             m_exp = re.search(r"(\w+\s+\d{1,2}\s+Exp)", desc, flags=re.IGNORECASE)
             expiry_token = m_exp.group(1) if m_exp else ""
 
-        # Date from Time/TimeStampAtType, else today
+        # Date from Time/TimeStampAtType
         tinfo = str(row.get("Time", "")) or str(row.get("TimeStampAtType", ""))
         trade_date = parse_tastytrade_date(tinfo) or datetime.now().strftime("%Y-%m-%d")
 
-        # If cr/db tag missing, infer from action
+        # If cr/db tag missing, infer by action
         if not (is_credit or is_debit) and action:
-            if action in ("STO", "STC"):
-                is_credit = True
-            elif action in ("BTO", "BTC"):
-                is_debit = True
+            if action in ("STO","STC"): is_credit = True
+            elif action in ("BTO","BTC"): is_debit = True
 
-        # Signed premium at leg level (per-contract price × contracts) with sign by cr/db
+        # Signed premium at leg level (per-contract price × contracts) signed by cr/db
         signed_premium = (price_num if is_credit else -price_num) * contracts
 
-        # Only proceed for recognizable option legs
+        # Only accept recognizable option legs
         if opt_type is None or strike is None:
             return None
 
@@ -888,15 +892,15 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
             "date": trade_date,
             "symbol": symbol,
             "action": action,                 # STO/BTO/BTC/STC
-            "contracts": contracts,           # absolute contracts
-            "qty_signed": qty_signed,         # original signed qty from description
+            "contracts": contracts,           # absolute
+            "qty_signed": qty_signed,         # original signed qty
             "is_credit": is_credit,
             "is_debit": is_debit,
-            "unit_price": price_num,          # option price per contract
+            "unit_price": price_num,          # per contract
             "signed_premium": signed_premium,
-            "option_type": opt_type,          # "Call" | "Put"
+            "option_type": opt_type,          # "Call" or "Put"
             "strike": strike,
-            "expiry": expiry_token,           # canonical YYYY-MM-DD where possible
+            "expiry": expiry_token,           # canonical when available
             "description": desc,
             "market_or_fill": price_field_text,
         }
@@ -905,10 +909,6 @@ def parse_tastytrade_leg(row: pd.Series) -> Union[dict, None]:
 
 
 def legs_to_journal_trades(legs_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Pair STO/BTC (short) and BTO/STC (long) legs into journal trades.
-    Outputs rows: date, symbol, strategy, entry_price, exit_price, quantity, notes, status.
-    """
     if legs_df.empty:
         return pd.DataFrame(columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
 
@@ -916,20 +916,18 @@ def legs_to_journal_trades(legs_df: pd.DataFrame) -> pd.DataFrame:
     if opt_legs.empty:
         return pd.DataFrame(columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
 
-    # Helper: contract-weighted average for a given action and credit/debit flag
     def _wavg(grp, act: str, credit_flag: bool) -> tuple[float,int]:
         sub = grp[(grp["action"]==act) & (grp["is_credit"]==credit_flag)]
         if sub.empty:
             return 0.0, 0
         wsum = (sub["unit_price"] * sub["contracts"]).sum()
         qty  = int(sub["contracts"].sum())
-        return (wsum / qty if qty else 0.0), qty
+        return (wsum/qty if qty else 0.0), qty
 
     key_cols = ["symbol","option_type","strike","expiry"]
-    trades_out = []
+    out = []
 
     for key, grp in opt_legs.groupby(key_cols):
-        # Normalize actions to upper (safety)
         grp = grp.copy()
         grp["action"] = grp["action"].str.upper()
 
@@ -941,81 +939,77 @@ def legs_to_journal_trades(legs_df: pd.DataFrame) -> pd.DataFrame:
         net_short = opened_sto - closed_btc
         net_long  = opened_bto - closed_stc
 
-        # Short side realized (e.g., CSP / short calls)
+        # Short realized (CSP/short call)
         if opened_sto > 0 and opened_sto == closed_btc:
-            entry_price, eqty = _wavg(grp, "STO", True)    # credit at open
-            exit_price, xqty  = _wavg(grp, "BTC", False)   # debit at close
-            if eqty == 0: entry_price = abs(grp["signed_premium"].sum()) / max(opened_sto,1)
-            if xqty == 0: exit_price = 0.0
-
+            ep, eq = _wavg(grp,"STO",True)
+            xp, xq = _wavg(grp,"BTC",False)
+            if eq == 0: ep = abs(grp["signed_premium"].sum())/max(opened_sto,1)
+            if xq == 0: xp = 0.0
             symbol, opt_type, strike, expiry = key
-            strategy = "Cash Secured Put" if opt_type=="Put" else "Covered Call"
             trade_date = max(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
-            trades_out.append({
+            out.append({
                 "date": trade_date.strftime("%Y-%m-%d"),
                 "symbol": symbol,
-                "strategy": strategy,
-                "entry_price": float(entry_price),
-                "exit_price": float(exit_price),
+                "strategy": "Cash Secured Put" if opt_type=="Put" else "Covered Call",
+                "entry_price": float(ep),
+                "exit_price": float(xp),
                 "quantity": int(opened_sto),
                 "notes": f"Paired legs {symbol} {strike} {opt_type} {expiry} (short)",
                 "status": "Closed",
             })
 
-        # Long side realized
+        # Long realized
         if opened_bto > 0 and opened_bto == closed_stc:
-            entry_price, eqty = _wavg(grp, "BTO", False)   # debit at open
-            exit_price, xqty  = _wavg(grp, "STC", True)    # credit at close
-            if eqty == 0: entry_price = abs(grp["signed_premium"].sum()) / max(opened_bto,1)
-            if xqty == 0: exit_price = 0.0
-
+            ep, eq = _wavg(grp,"BTO",False)
+            xp, xq = _wavg(grp,"STC",True)
+            if eq == 0: ep = abs(grp["signed_premium"].sum())/max(opened_bto,1)
+            if xq == 0: xp = 0.0
             symbol, opt_type, strike, expiry = key
-            strategy = "Long Put" if opt_type=="Put" else "Long Call"
             trade_date = max(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
-            trades_out.append({
+            out.append({
                 "date": trade_date.strftime("%Y-%m-%d"),
                 "symbol": symbol,
-                "strategy": strategy,
-                "entry_price": float(entry_price),
-                "exit_price": float(exit_price),
+                "strategy": "Long Put" if opt_type=="Put" else "Long Call",
+                "entry_price": float(ep),
+                "exit_price": float(xp),
                 "quantity": int(opened_bto),
                 "notes": f"Paired legs {symbol} {strike} {opt_type} {expiry} (long)",
                 "status": "Closed",
             })
 
-        # Residual shorts remain open
+        # Residual shorts open
         if net_short > 0:
             symbol, opt_type, strike, expiry = key
-            entry_price, _ = _wavg(grp, "STO", True)
+            ep, _ = _wavg(grp,"STO",True)
             trade_date = min(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
-            trades_out.append({
+            out.append({
                 "date": trade_date.strftime("%Y-%m-%d"),
                 "symbol": symbol,
                 "strategy": "Cash Secured Put" if opt_type=="Put" else "Covered Call",
-                "entry_price": float(entry_price),
+                "entry_price": float(ep),
                 "exit_price": 0.0,
                 "quantity": int(net_short),
                 "notes": f"Open residual {symbol} {strike} {opt_type} {expiry} (short)",
                 "status": "Open",
             })
 
-        # Residual longs remain open
+        # Residual longs open
         if net_long > 0:
             symbol, opt_type, strike, expiry = key
-            entry_price, _ = _wavg(grp, "BTO", False)
+            ep, _ = _wavg(grp,"BTO",False)
             trade_date = min(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
-            trades_out.append({
+            out.append({
                 "date": trade_date.strftime("%Y-%m-%d"),
                 "symbol": symbol,
                 "strategy": "Long Put" if opt_type=="Put" else "Long Call",
-                "entry_price": float(entry_price),
+                "entry_price": float(ep),
                 "exit_price": 0.0,
                 "quantity": int(net_long),
                 "notes": f"Open residual {symbol} {strike} {opt_type} {expiry} (long)",
                 "status": "Open",
             })
 
-    return pd.DataFrame(trades_out, columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
+    return pd.DataFrame(out, columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
 
 
 def parse_tastytrade_date(time_str: str) -> str:
