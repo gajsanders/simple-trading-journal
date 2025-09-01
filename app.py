@@ -746,180 +746,259 @@ def import_trades(uploaded_file, column_mapping: dict, skip_duplicates: bool = F
         return {"success": False, "error": f"Error saving trades: {str(e)}"}
 
 def import_tastytrade_trades(df: pd.DataFrame, skip_duplicates: bool = False) -> dict:
-    """
-    Import trades from Tastytrade CSV format.
-    """
     try:
-        processed_trades = []
+        legs = []
         for idx, row in df.iterrows():
-            try:
-                trade_data = parse_tastytrade_row(row)
-                if trade_data:
-                    processed_trades.append(trade_data)
-            except Exception as e:
-                st.warning(f"Skipping row {idx+1} due to parsing error: {str(e)}")
-                continue
+            leg = parse_tastytrade_leg(row)
+            if leg:
+                legs.append(leg)
+        if not legs:
+            return {"success": False, "error": "No recognizable option legs found"}
 
-        if not processed_trades:
-            return {"success": False, "error": "No valid trades found in the file"}
+        legs_df = pd.DataFrame(legs)
 
-        mapped_df = pd.DataFrame(processed_trades)
+        # Build journal rows from legs
+        mapped_df = legs_to_journal_trades(legs_df)
 
-        # Status first
-        if 'status' in mapped_df.columns:
-            mapped_df['status'] = mapped_df['status'].astype(str).str.title()
-            mapped_df.loc[~mapped_df['status'].isin(['Open', 'Closed']), 'status'] = 'Open'
-        else:
-            mapped_df['status'] = np.where(mapped_df['exit_price'] > 0, 'Closed', 'Open')
-
-        # Compute P&L for Closed only
-        mapped_df['pnl'] = mapped_df.apply(
-            lambda row: calculate_pnl(row['entry_price'], row['exit_price'], row['quantity'], row.get('strategy', 'Other'))
-            if row['status'] == 'Closed' else 0.0,
-            axis=1
-        )
+        # Compute P&L for Closed trades
+        if not mapped_df.empty:
+            mapped_df["pnl"] = mapped_df.apply(
+                lambda r: calculate_pnl(r["entry_price"], r["exit_price"], r["quantity"], r.get("strategy","Other"))
+                if r["status"] == "Closed" else 0.0,
+                axis=1
+            )
 
         # Validate
         validation_errors = validate_import_data(mapped_df)
         if validation_errors:
             return {"success": False, "error": "Validation errors found", "validation_errors": validation_errors}
 
-        # Load existing
+        # Load existing and handle duplicates
         existing_trades = load_trades()
+        duplicate_count = 0
+        if skip_duplicates and not existing_trades.empty and not mapped_df.empty:
+            mapped_df["duplicate_key"] = mapped_df.apply(lambda r: f"{r['date']}_{r['symbol']}_{r['strategy']}_{r['entry_price']}_{r['exit_price']}_{r['quantity']}", axis=1)
+            existing_trades["duplicate_key"] = existing_trades.apply(lambda r: f"{r['date']}_{r['symbol']}_{r['strategy']}_{r['entry_price']}_{r['exit_price']}_{r['quantity']}", axis=1)
+            original = len(mapped_df)
+            mapped_df = mapped_df[~mapped_df["duplicate_key"].isin(existing_trades["duplicate_key"])]
+            duplicate_count = original - len(mapped_df)
+            mapped_df.drop(columns=["duplicate_key"], inplace=True, errors="ignore")
+            existing_trades.drop(columns=["duplicate_key"], inplace=True, errors="ignore")
 
-        # Duplicates
-        if skip_duplicates and not existing_trades.empty:
-            mapped_df['duplicate_key'] = mapped_df.apply(
-                lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
-            )
-            existing_trades['duplicate_key'] = existing_trades.apply(
-                lambda row: f"{row['date']}_{row['symbol']}_{row['entry_price']}", axis=1
-            )
-            original_count = len(mapped_df)
-            mapped_df = mapped_df[~mapped_df['duplicate_key'].isin(existing_trades['duplicate_key'])]
-            duplicate_count = original_count - len(mapped_df)
-            mapped_df = mapped_df.drop('duplicate_key', axis=1)
-            existing_trades = existing_trades.drop('duplicate_key', axis=1)
-        else:
-            duplicate_count = 0
-
-        # Combine and save
+        # Save
         if existing_trades.empty:
             combined_df = mapped_df
         else:
             combined_df = pd.concat([existing_trades, mapped_df], ignore_index=True)
 
         save_trades(combined_df)
+
         return {
             "success": True,
-            "imported_count": len(mapped_df),
-            "duplicate_count": duplicate_count,
-            "total_count": len(combined_df),
+            "imported_count": int(len(mapped_df)),
+            "duplicate_count": int(duplicate_count),
+            "total_count": int(len(combined_df)),
         }
-
     except Exception as e:
         return {"success": False, "error": f"Error processing Tastytrade data: {str(e)}"}
 
-def parse_tastytrade_row(row) -> dict:
+def parse_tastytrade_leg(row: pd.Series) -> dict | None:
     """
-    Parse a single row from Tastytrade CSV format.
+    Parse a single row from Tastytrade CSV format into a normalized leg dict.
+    
+    Returns:
+        dict: Normalized leg dictionary or None if the row is not a recognizable option/stock leg
     """
     try:
         symbol = str(row.get('Symbol', '')).upper().strip()
         if not symbol:
             return None
 
-        # Use MarketOrFill column for actual execution price
-        price_str = str(row.get('MarketOrFill', ''))
+        # MarketOrFill contains "1.62 cr" or "0.48 db"
+        price_str = str(row.get('MarketOrFill', '')).strip()
         if not price_str:
             return None
-            
-        # Extract the numeric price value (before 'cr' or 'db')
-        price_parts = price_str.split()
-        if not price_parts:
-            return None
-            
-        price_text = price_parts[0]  # Get the price part (e.g., "1.06" from "1.06 cr")
-        price_clean = ''.join(c for c in price_text if c.isdigit() or c == '.')
-        if not price_clean:
-            return None
-            
-        price = float(price_clean)
-        
-        # Determine if this is a credit (cr) or debit (db)
+        price_txt = price_str.split()
+        price_num = float(''.join(c for c in price_txt if c.isdigit() or c == '.'))
         is_credit = 'cr' in price_str.lower()
         is_debit = 'db' in price_str.lower()
 
-        description = str(row.get('Description', ''))
-        time_info = str(row.get('Time', '')) or str(row.get('TimeStampAtType', ''))
+        desc = str(row.get('Description', ''))
+        # Action
+        m_act = re.search(r'(STO|BTC|BTO|STC)\b', desc)
+        action = m_act.group(1) if m_act else None
 
-        # Parse date from Time or TimeStampAtType
-        date = parse_tastytrade_date(time_info)
-        if not date:
-            date = datetime.now().strftime('%Y-%m-%d')
+        # Contracts (signed in description like "-3")
+        m_qty = re.match(r'([+-]?\d+)', desc)
+        qty_signed = int(m_qty.group(1)) if m_qty else 1
+        contracts = abs(qty_signed)
 
-        # Quantity: parse from description (e.g., "-2" or "1")
-        qty = 1
-        qty_match = re.search(r'([+-]?\d+)', description)
-        if qty_match:
-            qty = int(qty_match.group(1))
+        # Option type/strike
+        m_type = re.search(r'\b(Call|Put)\b', desc)
+        opt_type = m_type.group(1) if m_type else None
+        m_strike = re.search(r' (\d+(?:\.\d+)?) \b(?:Call|Put)\b', desc)
+        strike = float(m_strike.group(1)) if m_strike else None
 
-        # Initialize prices
-        entry_price = price
-        exit_price = 0.0
-        
-        # Determine if this is an opening or closing trade
-        trade_status = 'Open'
-        is_closing_trade = 'STC' in description or 'BTC' in description
-        
-        if is_closing_trade:
-            trade_status = 'Closed'
-            exit_price = entry_price  # For now, use the same price; could be improved with pairing
+        # Expiry token normalization (best-effort): try patterns like "Aug 29", "Sep 19", or "... Exp 65 Put"
+        expiry_token = None
+        # 1) Try "<Mon> <dd>"
+        m_md = re.search(r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b', desc)
+        if m_md:
+            mon, day = m_md.group(1), int(m_md.group(2))
+            # Assume current year
+            y = datetime.now().year
+            # Build canonical YYYY-MM-DD
+            dt_try = pd.to_datetime(f"{mon} {day} {y}", errors='coerce')
+            if pd.notna(dt_try):
+                expiry_token = dt_try.strftime('%Y-%m-%d')
+        # 2) Fallback: keep trailing 'Exp' token as part of key
+        if expiry_token is None:
+            m_exp = re.search(r'(\w+\s+\d{1,2}\s+Exp)', desc)
+            expiry_token = m_exp.group(1) if m_exp else ""
 
-        # Determine strategy heuristically
-        strategy = 'Other'
-        if 'Put' in description:
-            if 'STO' in description:  # Sell to Open
-                strategy = 'Cash Secured Put'
-            elif 'BTC' in description:  # Buy to Close
-                strategy = 'Long Put'
-            elif 'BTO' in description:  # Buy to Open
-                strategy = 'Long Put'
-            elif 'STC' in description:  # Sell to Close
-                strategy = 'Cash Secured Put'
-            else:
-                # Default logic based on action type
-                strategy = 'Long Put' if qty > 0 else 'Cash Secured Put'
-        elif 'Call' in description:
-            if 'STO' in description:  # Sell to Open
-                strategy = 'Covered Call'
-            elif 'BTC' in description:  # Buy to Close
-                strategy = 'Long Call'
-            elif 'BTO' in description:  # Buy to Open
-                strategy = 'Long Call'
-            elif 'STC' in description:  # Sell to Close
-                strategy = 'Covered Call'
-            else:
-                # Default logic based on action type
-                strategy = 'Long Call' if qty > 0 else 'Covered Call'
-        elif any(word in description for word in ['Stock', 'Equity']):
-            strategy = 'Long Stock' if qty > 0 else 'Short Stock'
-        else:
-            strategy = 'Long Stock' if qty > 0 else 'Short Stock'
+        # Time/date
+        tinfo = str(row.get('Time', '')) or str(row.get('TimeStampAtType', ''))
+        trade_date = parse_tastytrade_date(tinfo) or datetime.now().strftime('%Y-%m-%d')
 
-        return {
-            'date': date,
-            'symbol': symbol,
-            'strategy': strategy,
-            'entry_price': entry_price,
-            'exit_price': exit_price,
-            'quantity': qty,
-            'pnl': 0.0,
-            'notes': description,
-            'status': trade_status,
+        # Signed premium per contract group: + for credit, - for debit, times contracts
+        signed_premium = (price_num if is_credit else -price_num) * contracts
+
+        # If it is stock/equity and not option, we can map separately later
+        leg = {
+            "date": trade_date,
+            "symbol": symbol,
+            "action": action,                # STO/BTO/BTC/STC
+            "contracts": contracts,          # absolute
+            "qty_signed": qty_signed,        # original signed quantity
+            "is_credit": is_credit,
+            "is_debit": is_debit,
+            "unit_price": price_num,         # option price per contract
+            "signed_premium": signed_premium,
+            "option_type": opt_type,         # Call/Put or None
+            "strike": strike,                # float or None
+            "expiry": expiry_token,          # canonical YYYY-MM-DD where possible
+            "description": desc,
+            "market_or_fill": price_str,
         }
+        return leg
     except Exception:
         return None
+
+
+def legs_to_journal_trades(legs_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert parsed legs into journal-friendly trades by pairing STO/BTC (and BTO/STC).
+    Outputs rows with: date, symbol, strategy, entry_price, exit_price, quantity, notes, status, pnl (computed later).
+    """
+    if legs_df.empty:
+        return pd.DataFrame(columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
+
+    # Only options here; stock lines can be added later if needed
+    is_option = legs_df["option_type"].notna()
+    opt_legs = legs_df[is_option].copy()
+
+    # Key to match positions
+    key_cols = ["symbol","option_type","strike","expiry"]
+
+    # Aggregate by key to detect closures
+    trades_out = []
+
+    for key, grp in opt_legs.groupby(key_cols):
+        # Track quantities opened vs closed by action
+        opened_sto = grp[grp["action"]=="STO"]["contracts"].sum()
+        opened_bto = grp[grp["action"]=="BTO"]["contracts"].sum()
+        closed_btc = grp[grp["action"]=="BTC"]["contracts"].sum()
+        closed_stc = grp[grp["action"]=="STC"]["contracts"].sum()
+
+        # For short positions (CSP / Short Put / Short Call), look at STO/BTC
+        # For long positions, look at BTO/STC
+        # Compute net contracts
+        net_short = opened_sto - closed_btc
+        net_long  = opened_bto - closed_stc
+
+        # Short side realized if opened_sto == closed_btc
+        if opened_sto > 0 and opened_sto == closed_btc:
+            # Compute average credit and debit per contract for the closed size
+            credit_prices = grp[(grp["action"]=="STO") & (grp["is_credit"])].copy()
+            debit_prices  = grp[(grp["action"]=="BTC") & (grp["is_debit"])].copy()
+            entry_price = credit_prices["unit_price"].mean() if not credit_prices.empty else abs(grp["signed_premium"].sum())/opened_sto
+            exit_price  = debit_prices["unit_price"].mean() if not debit_prices.empty else 0.0
+
+            symbol, opt_type, strike, expiry = key
+            strategy = "Cash Secured Put" if opt_type=="Put" else "Covered Call"
+            trade_date = max(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
+
+            trades_out.append({
+                "date": trade_date.strftime("%Y-%m-%d"),
+                "symbol": symbol,
+                "strategy": strategy,
+                "entry_price": float(entry_price),
+                "exit_price": float(exit_price),
+                "quantity": int(opened_sto),
+                "notes": f"Paired legs {symbol} {strike} {opt_type} {expiry} (short)",
+                "status": "Closed",
+            })
+
+        # Long side realized if opened_bto == closed_stc
+        if opened_bto > 0 and opened_bto == closed_stc:
+            credit_prices = grp[(grp["action"]=="STC") & (grp["is_credit"])].copy()
+            debit_prices  = grp[(grp["action"]=="BTO") & (grp["is_debit"])].copy()
+            entry_price = debit_prices["unit_price"].mean() if not debit_prices.empty else abs(grp["signed_premium"].sum())/opened_bto
+            exit_price  = credit_prices["unit_price"].mean() if not credit_prices.empty else 0.0
+
+            symbol, opt_type, strike, expiry = key
+            strategy = "Long Put" if opt_type=="Put" else "Long Call"
+            trade_date = max(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
+
+            trades_out.append({
+                "date": trade_date.strftime("%Y-%m-%d"),
+                "symbol": symbol,
+                "strategy": strategy,
+                "entry_price": float(entry_price),
+                "exit_price": float(exit_price),
+                "quantity": int(opened_bto),
+                "notes": f"Paired legs {symbol} {strike} {opt_type} {expiry} (long)",
+                "status": "Closed",
+            })
+
+        # Residual shorts remain open
+        if net_short > 0:
+            symbol, opt_type, strike, expiry = key
+            credit_prices = grp[(grp["action"]=="STO") & (grp["is_credit"])].copy()
+            entry_price = credit_prices["unit_price"].mean() if not credit_prices.empty else 0.0
+            trade_date = min(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
+
+            trades_out.append({
+                "date": trade_date.strftime("%Y-%m-%d"),
+                "symbol": symbol,
+                "strategy": "Cash Secured Put" if opt_type=="Put" else "Covered Call",
+                "entry_price": float(entry_price),
+                "exit_price": 0.0,
+                "quantity": int(net_short),
+                "notes": f"Open residual {symbol} {strike} {opt_type} {expiry} (short)",
+                "status": "Open",
+            })
+
+        # Residual longs remain open
+        if net_long > 0:
+            symbol, opt_type, strike, expiry = key
+            debit_prices = grp[(grp["action"]=="BTO") & (grp["is_debit"])].copy()
+            entry_price = debit_prices["unit_price"].mean() if not debit_prices.empty else 0.0
+            trade_date = min(pd.to_datetime(grp["date"])) if "date" in grp else pd.Timestamp.today()
+
+            trades_out.append({
+                "date": trade_date.strftime("%Y-%m-%d"),
+                "symbol": symbol,
+                "strategy": "Long Put" if opt_type=="Put" else "Long Call",
+                "entry_price": float(entry_price),
+                "exit_price": 0.0,
+                "quantity": int(net_long),
+                "notes": f"Open residual {symbol} {strike} {opt_type} {expiry} (long)",
+                "status": "Open",
+            })
+
+    out = pd.DataFrame(trades_out, columns=["date","symbol","strategy","entry_price","exit_price","quantity","notes","status"])
+    return out
 
 
 def parse_tastytrade_date(time_str: str) -> str:
@@ -1120,26 +1199,24 @@ def display_import_section() -> None:
                     df = pd.read_csv(uploaded_file)
                     if analysis.get('is_tastytrade', False):
                         sample_trades = []
-                        for idx, row in df.head(5).iterrows():
-                            try:
-                                trade_data = parse_tastytrade_row(row)
-                                if trade_data:
-                                    sample_trades.append(trade_data)
-                            except:
-                                continue
-                        if sample_trades:
-                            mapped_df = pd.DataFrame(sample_trades)
-                            st.write("**Mapped Data Preview (Tastytrade format):**")
-                            st.dataframe(mapped_df)
-                            validation_errors = validate_import_data(mapped_df)
-                            if validation_errors:
-                                st.warning("**Validation Errors Found:**")
-                                for error in validation_errors:
-                                    st.write(f"- {error}")
-                            else:
-                                st.success("Data validation passed!")
+                        uploaded_file.seek(0)
+                        df_full = pd.read_csv(uploaded_file)
+                        legs = []
+                        for idx, row in df_full.head(50).iterrows():
+                            leg = parse_tastytrade_leg(row)
+                            if leg:
+                                legs.append(leg)
+                        legs_df = pd.DataFrame(legs)
+                        mapped_df = legs_to_journal_trades(legs_df).head(10)
+                        st.write("**Mapped Data Preview (paired legs):**")
+                        st.dataframe(mapped_df)
+                        validation_errors = validate_import_data(mapped_df)
+                        if validation_errors:
+                            st.warning("**Validation Errors Found:**")
+                            for error in validation_errors:
+                                st.write(f"- {error}")
                         else:
-                            st.warning("Unable to parse any trades from the Tastytrade data.")
+                            st.success("Data validation passed!")
                     else:
                         mapped_df = pd.DataFrame()
                         for trade_field, csv_column in column_mapping.items():

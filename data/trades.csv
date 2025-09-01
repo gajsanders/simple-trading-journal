@@ -126,3 +126,49 @@ date,symbol,strategy,entry_price,exit_price,quantity,pnl,notes,status
 2025-01-21,COIN,Long Put,2.37,2.37,1,0.0,1 Feb 14 Exp 230 Put BTC,Closed
 2025-01-17,GOOGL,Cash Secured Put,1.88,0.0,-1,0.0,-1 Feb 14 Exp 180 Put STO,Open
 2025-01-16,COIN,Cash Secured Put,4.7,0.0,-1,0.0,-1 Feb 14 Exp 230 Put STO,Open
+2025-08-26,ETHA,Cash Secured Put,1.62,0.0,-3,0.0,-3 Sep 19 18d 32 Put STO,Open
+2025-08-25,ETHA,Long Put,0.48,0.48,2,0.0,2 Sep 19 18d 27 Put BTC,Closed
+2025-08-25,ETHA,Long Put,0.48,0.48,2,0.0,2 Sep 12 11d 28 Put BTC,Closed
+2025-08-22,ETHA,Cash Secured Put,3.0,0.0,-3,0.0,-3 Nov 21 81d 31 Put STO,Open
+2025-08-22,/MESU5,Long Put,3.7,3.7,1,0.0,1 Aug 29 Exp 6200 Put BTC,Closed
+2025-08-20,IBIT,Long Put,1.73,1.73,1,0.0,1 Aug 29 Exp 65 Put BTC,Closed
+2025-08-18,XOP,Covered Call,1.63,0.0,-1,0.0,-1 Sep 19 18d 128.5 Call STO,Open
+2025-08-15,/MESU5,Long Put,3.4,3.4,1,0.0,1 Aug 29 Exp 5975 Put BTC,Closed
+2025-08-11,ETHA,Cash Secured Put,2.37,0.0,-3,0.0,-3 Oct 17 46d 29 Put STO,Open
+2025-08-11,ETHA,Long Put,0.29,0.29,2,0.0,2 Aug 29 Exp 26 Put BTC,Closed
+2025-08-08,ETHA,Cash Secured Put,2.65,0.0,-2,0.0,-2 Sep 26 25d 29 Put STO,Open
+2025-08-08,ETHA,Long Put,0.35,0.35,2,0.0,2 Sep 19 18d 21 Put BTC,Closed
+2025-08-07,ETHA,Cash Secured Put,1.99,0.0,-2,0.0,-2 Sep 12 11d 28 Put STO,Open
+2025-08-07,IBIT,Cash Secured Put,2.62,0.0,-1,0.0,-1 Sep 26 25d 64 Put STO,Open
+2025-08-07,ETHA,Long Put,0.22,0.22,2,0.0,2 Aug 15 Exp 26 Put BTC,Closed
+2025-08-06,IBIT,Long Put,0.39,0.39,1,0.0,1 Aug 22 Exp 60.5 Put BTC,Closed
+2025-07-31,IBIT,Long Put,0.36,0.36,1,0.0,1 Aug 22 Exp 59.5 Put BTC,Closed
+2025-07-30,ETHA,Long Put,0.21,0.21,2,0.0,2 Aug 15 Exp 23 Put BTC,Closed
+2025-07-28,/MESU5,Cash Secured Put,37.0,0.0,-1,0.0,-1 Aug 29 Exp 6200 Put STO,Open
+2025-07-28,ETHA,Cash Secured Put,1.9,0.0,-2,0.0,-2 Sep 19 18d 27 Put STO,Open
+2025-07-28,AMZN,Long Put,0.31,0.31,1,0.0,1 Aug 15 Exp 190 Put BTC,Closed
+2025-07-28,ETHA,Long Put,0.36,0.36,2,0.0,2 Sep 19 18d 20 Put BTC,Closed
+2025-07-25,TEM,Long Put,0.27,0.27,1,0.0,1 Aug 15 Exp 45 Put BTC,Closed
+2025-07-25,PLTR,Long Put,0.54,0.54,1,0.0,1 Aug 15 Exp 110 Put BTC,Closed
+2025-07-22,/MESU5,Long Put,0.45,0.45,1,0.0,1 Jul 31 Exp 5400 Put BTC,Closed
+2025-07-22,ETHA,Cash Secured Put,1.06,0.0,-2,0.0,-2 Aug 15 Exp 26 Put STO,Open
+2025-07-22,ETHA,Long Put,0.22,0.22,2,0.0,2 Aug 15 Exp 21 Put BTC,Closed
+2025-07-22,/MESU5,Cash Secured Put,31.5,0.0,-1,0.0,-1 Aug 29 Exp 5975 Put STO,Open
+2025-07-22,/MESU5,Long Put,3.6,3.6,1,0.0,1 Aug 1 Exp 5975 Put BTC,Closed
+2025-07-21,ETHA,Cash Secured Put,1.44,0.0,-2,0.0,-2 Aug 29 Exp 26 Put STO,Open
+2025-07-21,IBIT,Long Put,0.24,0.24,1,0.0,1 Aug 15 Exp 54 Put BTC,Closed
+2025-07-21,IBIT,Cash Secured Put,3.25,0.0,-1,0.0,-1 Sep 19 18d 65 Put STO,Open
+2025-07-16,ETHA,Cash Secured Put,1.06,0.0,-2,0.0,-2 Aug 15 Exp 23 Put STO,Open
+2025-09-01,AMD,Covered Call,0.27,0.0,-2,0.0,-2 Mar 14 Exp 119 Call STO,Open
+2025-09-01,AMD,Long Call,0.08,0.08,2,0.0,2 Mar 7 Exp 121 Call BTC,Closed
+2025-09-01,AMD,Covered Call,0.46,0.0,-2,0.0,-2 Mar 7 Exp 121 Call STO,Open
+2025-09-01,QQQ,Long Put,7.05,7.05,1,0.0,1 Jan 16 137d 394.78 Put BTC,Closed
+2025-09-01,BIL,Short Stock,91.61,91.61,-115,-0.0,-115 STC,Closed
+2025-09-01,WYNN,Long Put,0.67,0.67,1,0.0,1 Feb 21 Exp 82.5 Put BTC,Closed
+2025-09-01,UBER,Long Put,0.98,0.98,1,0.0,1 Feb 21 Exp 62.5 Put BTC,Closed
+2025-09-01,GOOGL,Long Put,0.9,0.9,1,0.0,1 Feb 14 Exp 180 Put BTC,Closed
+2025-09-01,QQQ,Cash Secured Put,8.36,0.0,-1,0.0,-1 Jan 16 137d 394.78 Put STO,Open
+2025-09-01,SPY,Cash Secured Put,8.36,0.0,-1,0.0,-1 Jan 16 137d 490 Put STO,Open
+2025-09-01,COIN,Long Put,2.37,2.37,1,0.0,1 Feb 14 Exp 230 Put BTC,Closed
+2025-09-01,GOOGL,Cash Secured Put,1.88,0.0,-1,0.0,-1 Feb 14 Exp 180 Put STO,Open
+2025-09-01,COIN,Cash Secured Put,4.7,0.0,-1,0.0,-1 Feb 14 Exp 230 Put STO,Open
